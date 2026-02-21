@@ -6,6 +6,8 @@
  * 4. analyzeBase64Frame  → mismo que 3 pero acepta base64 directo (frame de video)
  */
 
+import { logTokenUsage } from './tokenLogger'
+
 const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY
 // Modelo primario: gemini-2.5-flash (funciona con Nivel 1 pagado)
 // Fallback: gemini-2.0-flash-lite (gemini-2.0-flash ya no disponible para nuevos)
@@ -103,21 +105,25 @@ async function callGemini(parts, maxTokens = 1024, _retry = false) {
         const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
         console.log('[Gemini raw]', raw.slice(0, 300))
 
+        // Capturar metadata de uso de tokens
+        const usageMetadata = data?.usageMetadata ?? {}
+
         // Limpiar markdown code fences
         let clean = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
 
+        // Helper para retornar parsed + metadata
+        const wrapResult = (parsed) => ({ parsed, usageMetadata, model })
+
         // Intento 1: parsear directamente
         try {
-            return JSON.parse(clean)
+            return wrapResult(JSON.parse(clean))
         } catch { /* intentar extracción */ }
 
         // Intento 2: extraer el primer bloque JSON {...} del texto
         const jsonMatch = raw.match(/\{[\s\S]*\}/)
         if (jsonMatch) {
             try {
-                const parsed = JSON.parse(jsonMatch[0])
-                console.log('[Gemini parsed]', parsed)
-                return parsed
+                return wrapResult(JSON.parse(jsonMatch[0]))
             } catch { /* falló también */ }
         }
 
@@ -125,7 +131,7 @@ async function callGemini(parts, maxTokens = 1024, _retry = false) {
         const arrMatch = raw.match(/\[[\s\S]*\]/)
         if (arrMatch) {
             try {
-                return { items: JSON.parse(arrMatch[0]) }
+                return wrapResult({ items: JSON.parse(arrMatch[0]) })
             } catch { /* falló */ }
         }
 
@@ -173,10 +179,21 @@ function normalizeItem(i, source = 'photo') {
 export async function analyzeFoodPhoto(imageFile) {
     const { base64, mimeType } = await toBase64(imageFile)
     // Las imágenes necesitan más tokens (el modelo genera pensamiento + JSON largo)
-    const parsed = await callGemini([
+    const { parsed, usageMetadata, model } = await callGemini([
         { text: SCAN_PROMPT },
         { inlineData: { mimeType, data: base64 } },
     ], 2048)
+
+    // Registrar consumo de tokens
+    logTokenUsage({
+        functionType: 'photo',
+        model,
+        inputTokens: usageMetadata.promptTokenCount ?? 0,
+        outputTokens: usageMetadata.candidatesTokenCount ?? 0,
+        totalTokens: usageMetadata.totalTokenCount ?? 0,
+        metadata: { items: (parsed.items ?? []).length },
+    })
+
     return {
         items: (parsed.items ?? []).map(i => normalizeItem(i, 'photo')),
         confidence: parsed.confidence ?? 'media',
@@ -189,10 +206,21 @@ export async function analyzeFoodPhoto(imageFile) {
  * @param {string} base64jpeg — datos base64 sin prefijo "data:..."
  */
 export async function analyzeBase64Frame(base64jpeg) {
-    const parsed = await callGemini([
+    const { parsed, usageMetadata, model } = await callGemini([
         { text: SCAN_PROMPT },
         { inlineData: { mimeType: 'image/jpeg', data: base64jpeg } },
     ], 2048)
+
+    // Registrar consumo de tokens
+    logTokenUsage({
+        functionType: 'scan',
+        model,
+        inputTokens: usageMetadata.promptTokenCount ?? 0,
+        outputTokens: usageMetadata.candidatesTokenCount ?? 0,
+        totalTokens: usageMetadata.totalTokenCount ?? 0,
+        metadata: { items: (parsed.items ?? []).length },
+    })
+
     return {
         items: (parsed.items ?? []).map(i => normalizeItem(i, 'scan')),
         confidence: parsed.confidence ?? 'media',
@@ -222,11 +250,20 @@ Usa datos USDA. Redondea a 1 decimal.`
 
     // maxOutputTokens: 1024 (Gemini 2.5-flash usa pensamiento interno
     // que consume tokens — con 256 el JSON se truncaba)
-    const parsed = await callGemini([{ text: prompt }], 1024)
+    const { parsed, usageMetadata, model } = await callGemini([{ text: prompt }], 1024)
+
+    // Registrar consumo de tokens
+    logTokenUsage({
+        functionType: 'text',
+        model,
+        inputTokens: usageMetadata.promptTokenCount ?? 0,
+        outputTokens: usageMetadata.candidatesTokenCount ?? 0,
+        totalTokens: usageMetadata.totalTokenCount ?? 0,
+        metadata: { foodName, quantity, unit },
+    })
 
     // Validar que Gemini devolvió datos nutricionales reales
     if (parsed.calories == null && parsed.items !== undefined) {
-        // callGemini cayó al fallback { items: [] } — no es un resultado de texto válido
         throw new Error('Gemini no devolvió datos nutricionales válidos')
     }
 
@@ -238,7 +275,7 @@ Usa datos USDA. Redondea a 1 decimal.`
         emoji: parsed.emoji ?? '🍽️',
     }
 
-    // Si TODO es 0, algo salió mal — no hay alimento con 0 calorías en todo
+    // Si TODO es 0, algo salió mal
     if (result.calories === 0 && result.protein_g === 0 && result.carbs_g === 0 && result.fat_g === 0) {
         console.error('Gemini devolvió todo en 0:', parsed)
         throw new Error('No se pudieron calcular los macros — intenta describir mejor el alimento')
@@ -309,7 +346,18 @@ Devuelve ÚNICAMENTE un JSON válido (sin markdown):
 }`
 
     try {
-        const parsed = await callGemini([{ text: prompt }], 512)
+        const { parsed, usageMetadata, model } = await callGemini([{ text: prompt }], 512)
+
+        // Registrar consumo de tokens
+        logTokenUsage({
+            functionType: 'onboarding',
+            model,
+            inputTokens: usageMetadata.promptTokenCount ?? 0,
+            outputTokens: usageMetadata.candidatesTokenCount ?? 0,
+            totalTokens: usageMetadata.totalTokenCount ?? 0,
+            metadata: { firstName },
+        })
+
         return Array.isArray(parsed.recommendations)
             ? parsed.recommendations
             : ['💪 ¡Bienvenido! Has dado el primer paso hacia una vida más saludable.',

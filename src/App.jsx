@@ -8,9 +8,13 @@ import Dashboard from './components/Dashboard'
 import History from './components/History'
 import Weight from './components/Weight'
 import Settings from './components/Settings'
+import TokenDashboard from './components/TokenDashboard'
 import CameraScanner from './components/CameraScanner'
 import { Toast } from './components/UI'
-import { HomeIcon, ChartIcon, ScaleIcon, SettingsIcon, FlameIcon } from './components/Icons'
+import { HomeIcon, ChartIcon, ScaleIcon, SettingsIcon, FlameIcon, TokenIcon } from './components/Icons'
+
+// Email del administrador — único con acceso al panel de tokens IA
+const ADMIN_EMAIL = 'carlosadolforuizlopez@gmail.com'
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Inicio', Icon: HomeIcon },
@@ -18,6 +22,9 @@ const NAV_ITEMS = [
   { key: 'weight', label: 'Peso', Icon: ScaleIcon },
   { key: 'settings', label: 'Ajustes', Icon: SettingsIcon },
 ]
+
+// Pestaña extra para admin — se agrega dinámicamente
+const ADMIN_NAV = { key: 'tokens', label: 'Tokens', Icon: TokenIcon }
 
 // ── Loading screen ──────────────────────────────────────────────────────────
 function LoadingScreen() {
@@ -36,7 +43,7 @@ function LoadingScreen() {
 }
 
 // ── Sidebar escritorio ──────────────────────────────────────────────────────
-function DesktopSidebar({ page, setPage, config, onSignOut }) {
+function DesktopSidebar({ page, setPage, config, onSignOut, navItems }) {
   return (
     <aside className="hidden md:flex flex-col w-64 bg-[#111116] border-r border-[#1A1A22] h-dvh sticky top-0 shrink-0">
       <div className="px-6 py-7 border-b border-[#1A1A22]">
@@ -71,7 +78,7 @@ function DesktopSidebar({ page, setPage, config, onSignOut }) {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-5 space-y-1">
-        {NAV_ITEMS.map(({ key, label, Icon }) => {
+        {navItems.map(({ key, label, Icon }) => {
           const active = page === key
           return (
             <button key={key} onClick={() => setPage(key)}
@@ -137,6 +144,10 @@ export default function App() {
   const [configId, setConfigId] = useState(null)
   const [toast, setToast] = useState(null)
   const [scanner, setScanner] = useState(false) // Estado del escáner a nivel raíz
+
+  // Determinar si el usuario logueado es admin para mostrar la pestaña de tokens
+  const isAdmin = session?.user?.email === ADMIN_EMAIL
+  const navItems = isAdmin ? [...NAV_ITEMS, ADMIN_NAV] : NAV_ITEMS
 
   // Ref para pasar getter real de vasos al recordatorio de agua
   const glassesRef = useRef(0)
@@ -259,6 +270,7 @@ export default function App() {
           showToast={showToast}
         />
       )
+      case 'tokens': return <TokenDashboard />
       default: return null
     }
   }
@@ -270,7 +282,7 @@ export default function App() {
       <div className="md:flex md:h-dvh md:overflow-hidden">
 
         {/* Sidebar escritorio */}
-        <DesktopSidebar page={page} setPage={setPageWithHistory} config={config} onSignOut={handleSignOut} />
+        <DesktopSidebar page={page} setPage={setPageWithHistory} config={config} onSignOut={handleSignOut} navItems={navItems} />
 
         {/* Columna principal */}
         <div className="flex-1 flex flex-col md:min-h-0 md:overflow-y-auto">
@@ -317,7 +329,7 @@ export default function App() {
       {/* Nav inferior (solo móvil) */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0
                       bg-[#0D0D11]/98 backdrop-blur-md border-t border-[#1A1A22] flex z-10">
-        {NAV_ITEMS.map(({ key, label, Icon }) => {
+        {navItems.map(({ key, label, Icon }) => {
           const active = page === key
           return (
             <button key={key} onClick={() => setPageWithHistory(key)}

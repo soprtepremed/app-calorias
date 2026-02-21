@@ -255,6 +255,14 @@ export const AppleIcon = (p) => (
     </Svg>
 )
 
+/** 🪙 Token / Chip — Monitoreo IA */
+export const TokenIcon = (p) => (
+    <Svg {...p}>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v10M9 9h6M9 15h6" />
+    </Svg>
+)
+
 /** Mapa de emojis de comida a iconos (fallback) */
 export const MEAL_ICONS = {
     desayuno: SunIcon,
