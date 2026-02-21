@@ -203,55 +203,85 @@ export default function App() {
   }, [])
 
   // ── Escuchar cambios de sesión ──────────────────────────────────────
+  // IMPORTANTE: Durante la inicialización, Supabase dispara eventos en este orden:
+  //   1. SIGNED_IN (desde _recoverAndRefresh) — el cliente NO está listo para queries
+  //   2. INITIAL_SESSION — el cliente YA está listo, queries funcionan
+  //
+  // Por eso: si authReady es false (aún inicializando), SIGNED_IN solo guarda
+  // la sesión SIN hacer queries. Las queries se hacen cuando llega INITIAL_SESSION.
+  // Si SIGNED_IN llega después (login genuino), authReady ya es true y sí carga config.
   useEffect(() => {
-    const unsub = onAuthChange(async (sess, event) => {
-      // INITIAL_SESSION: sesión restaurada de sessionStorage al recargar
-      // SIGNED_IN: login fresco (email+password o signUp)
-      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && sess) {
-        setAuthReady(true)
-        setSession(sess)
+    /** Carga el config del usuario y lo aplica al state */
+    const loadConfig = async (eventName) => {
+      try {
+        console.log(`[Auth] Cargando config (${eventName})...`)
+        let cfg = await getConfig()
+        console.log('[Auth] Config recibido:', cfg ? `onboarding_done=${cfg.onboarding_done}` : 'null')
 
-        // Cargar config — si onboarding_done es false, hacer polling
-        // para esperar a que Register.handleCreate complete el updateConfig.
-        // Esto evita la carrera: signUp → SIGNED_IN → desmonta Register.
-        try {
-          let cfg = await getConfig()
-
-          // Polling: si el onboarding NO está completo, esperar a que
-          // Register termine de guardar el perfil (max 15s, cada 600ms)
-          if (cfg && !cfg.onboarding_done) {
-            const MAX_WAIT = 15000
-            const INTERVAL = 600
-            const start = Date.now()
-            while (Date.now() - start < MAX_WAIT) {
-              await new Promise(r => setTimeout(r, INTERVAL))
-              cfg = await getConfig()
-              if (cfg?.onboarding_done) break
-            }
+        // Polling SOLO para signup fresco (onboarding incompleto)
+        if (cfg && !cfg.onboarding_done) {
+          console.log('[Auth] Polling onboarding (signup fresco)...')
+          const MAX_WAIT = 15000
+          const INTERVAL = 600
+          const start = Date.now()
+          while (Date.now() - start < MAX_WAIT) {
+            await new Promise(r => setTimeout(r, INTERVAL))
+            cfg = await getConfig()
+            if (cfg?.onboarding_done) break
           }
-
-          setConfig(cfg)
-          setConfigId(cfg?.id)
-        } catch (e) {
-          console.error('Error cargando config:', e)
         }
 
-        // Sincronizar cola offline
-        if (hasPending()) {
-          flushQueue().then(n => {
-            if (n > 0) showToast(`☁️ ${n} dato(s) sincronizado(s)`)
-          })
-        }
-        // Recordatorios de agua
-        requestNotificationPermission().then(granted => {
-          if (granted) startWaterReminder(
-            config?.water_reminder_hours ?? 2,
-            config?.water_goal ?? 8,
-            () => glassesRef.current
-          )
+        setConfig(cfg)
+        setConfigId(cfg?.id)
+        console.log('[Auth] ✅ Config aplicado, dashboard listo')
+      } catch (e) {
+        console.error('[Auth] ❌ Error cargando config:', e)
+        setConfig(null)
+        setConfigId(null)
+      }
+
+      // Sincronizar cola offline
+      if (hasPending()) {
+        flushQueue().then(n => {
+          if (n > 0) showToast(`☁️ ${n} dato(s) sincronizado(s)`)
         })
-      } else if (event === 'SIGNED_OUT' || event === 'INITIAL_SESSION' || !sess) {
-        // INITIAL_SESSION sin sess = no había sesión guardada → mostrar login
+      }
+      // Recordatorios de agua
+      requestNotificationPermission().then(granted => {
+        if (granted) startWaterReminder(
+          config?.water_reminder_hours ?? 2,
+          config?.water_goal ?? 8,
+          () => glassesRef.current
+        )
+      })
+    }
+
+    const unsub = onAuthChange(async (sess, event) => {
+      console.log(`[Auth] evento=${event}, sesión=${sess ? 'SÍ' : 'NO'}, authReady=${authReady}`)
+
+      if (event === 'INITIAL_SESSION') {
+        // Evento confiable: el cliente Supabase está completamente inicializado
+        setAuthReady(true)
+        if (sess) {
+          setSession(sess)
+          await loadConfig('INITIAL_SESSION')
+        } else {
+          setSession(null)
+          setConfig(null)
+          setConfigId(null)
+        }
+      } else if (event === 'SIGNED_IN' && sess) {
+        setSession(sess)
+        if (authReady) {
+          // Login genuino (post-inicialización) → cargar config
+          await loadConfig('SIGNED_IN')
+        } else {
+          // SIGNED_IN durante inicialización → solo guardar sesión,
+          // NO hacer queries (Supabase aún no está listo, getConfig cuelga)
+          console.log('[Auth] ⏳ SIGNED_IN durante init, esperando INITIAL_SESSION...')
+        }
+      } else if (event === 'SIGNED_OUT') {
+        console.log('[Auth] Sesión cerrada')
         setAuthReady(true)
         setSession(null)
         setConfig(null)
