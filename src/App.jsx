@@ -151,9 +151,10 @@ function DesktopHeader({ page }) {
 // APP PRINCIPAL
 // ════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  // Con persistSession:false, al refrescar/cerrar siempre pide login.
-  // La sesión solo existe mientras la app está abierta.
+  // Sesión persistida en sessionStorage: sobrevive recargas,
+  // se borra al cerrar pestaña/navegador.
   const [session, setSession] = useState(null)
+  const [authReady, setAuthReady] = useState(false) // true cuando INITIAL_SESSION se procesó
   const [page, setPage] = useState('dashboard')
   const [config, setConfig] = useState(null)
   const [configId, setConfigId] = useState(null)
@@ -201,10 +202,13 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePop)
   }, [])
 
-  // ── Escuchar cambios de sesión: solo SIGNED_IN y SIGNED_OUT ──────────
+  // ── Escuchar cambios de sesión ──────────────────────────────────────
   useEffect(() => {
     const unsub = onAuthChange(async (sess, event) => {
-      if (event === 'SIGNED_IN' && sess) {
+      // INITIAL_SESSION: sesión restaurada de sessionStorage al recargar
+      // SIGNED_IN: login fresco (email+password o signUp)
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && sess) {
+        setAuthReady(true)
         setSession(sess)
 
         // Cargar config — si onboarding_done es false, hacer polling
@@ -246,7 +250,9 @@ export default function App() {
             () => glassesRef.current
           )
         })
-      } else if (event === 'SIGNED_OUT' || !sess) {
+      } else if (event === 'SIGNED_OUT' || event === 'INITIAL_SESSION' || !sess) {
+        // INITIAL_SESSION sin sess = no había sesión guardada → mostrar login
+        setAuthReady(true)
         setSession(null)
         setConfig(null)
         setConfigId(null)
@@ -269,6 +275,19 @@ export default function App() {
 
 
   // ── Sin sesión → Login (siempre al refrescar/abrir) ───────────────────
+  // Mientras Supabase verifica si hay sesión en sessionStorage, mostrar splash
+  if (!authReady) return (
+    <div className="min-h-dvh bg-[#0D0D11] flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+          style={{ background: 'linear-gradient(135deg,#FF375F,#FF6B1A)' }}>
+          <FlameIcon size={24} className="text-white" />
+        </div>
+        <div className="w-6 h-6 border-2 border-[#FF375F]/30 border-t-[#FF375F] rounded-full spinner" />
+      </div>
+    </div>
+  )
+
   if (!session) return <Auth />
 
   // ── Contenido por página ────────────────────────────────────────────────

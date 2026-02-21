@@ -13,10 +13,11 @@ export const supabase = createClient(
     import.meta.env.VITE_SUPABASE_ANON_KEY,
     {
         auth: {
-            // NO persistir sesión: al refrescar o cerrar la app,
-            // el usuario debe iniciar sesión de nuevo.
-            // Esto elimina bugs de sesión colgada/spinner infinito.
-            persistSession: false,
+            // Persistir sesión en sessionStorage:
+            // ✅ Sobrevive recargas (F5, pull-to-refresh)
+            // ✅ Se borra al cerrar pestaña/navegador (seguro)
+            persistSession: true,
+            storage: window.sessionStorage,
             autoRefreshToken: true,
             detectSessionInUrl: true,
         },
