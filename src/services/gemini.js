@@ -8,8 +8,8 @@
 
 const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY
 // Modelo primario: gemini-2.5-flash (funciona con Nivel 1 pagado)
-// Fallback: gemini-2.0-flash
-const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash']
+// Fallback: gemini-2.0-flash-lite (gemini-2.0-flash ya no disponible para nuevos)
+const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash-lite']
 const makeUrl = (model) =>
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`
 
