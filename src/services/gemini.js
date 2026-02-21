@@ -1,5 +1,9 @@
 /**
  * gemini.js — Servicio Gemini Vision + texto
+ *
+ * SEGURIDAD: Las llamadas a Gemini se hacen a través de la Edge Function
+ * "gemini-proxy" de Supabase. La API Key NUNCA sale del servidor.
+ *
  * 1. analyzeFoodPhoto    → detecta alimentos desde un File de imagen
  * 2. analyzeFoodByText   → calcula macros desde nombre + cantidad
  * 3. analyzeFoodWithPos  → detecta alimentos + posición (bounding box) para overlay
@@ -7,13 +11,7 @@
  */
 
 import { logTokenUsage } from './tokenLogger'
-
-const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY
-// Modelo primario: gemini-2.5-flash (funciona con Nivel 1 pagado)
-// Fallback: gemini-2.0-flash-lite (gemini-2.0-flash ya no disponible para nuevos)
-const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash-lite']
-const makeUrl = (model) =>
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`
+import { supabase } from './supabase'
 
 // ── Prompt con bounding boxes ──────────────────────────────────────────────
 // Gemini 1.5 Flash soporta coordenadas normalizadas [y1,x1,y2,x2] en escala 0-1000
@@ -61,85 +59,63 @@ async function toBase64(file) {
 }
 
 /**
- * Llama a Gemini con fallback de modelos + retry para rate limits (429).
- * Flujo: intenta modelo principal → si 429, intenta modelo alternativo
- *        → si ambos 429, espera y reintenta (max 1 vez).
+ * Llama a Gemini a través de la Edge Function "gemini-proxy".
+ * La API Key vive como secret server-side — nunca expuesta al frontend.
+ * La lógica de model fallback y retry está en la Edge Function.
  */
-async function callGemini(parts, maxTokens = 1024, _retry = false) {
-    const body = JSON.stringify({
-        contents: [{ parts }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens },
+async function callGemini(parts, maxTokens = 1024) {
+    const { data, error } = await supabase.functions.invoke('gemini-proxy', {
+        body: { parts, maxTokens },
     })
 
-    // Intentar cada modelo en orden
-    for (let i = 0; i < MODELS.length; i++) {
-        const model = MODELS[i]
-        const res = await fetch(makeUrl(model), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body,
-        })
-
-        // Si 429 y hay otro modelo, probar el siguiente sin esperar
-        if (res.status === 429 && i < MODELS.length - 1) {
-            console.warn(`⏳ ${model} rate limited — probando ${MODELS[i + 1]}...`)
-            continue
-        }
-
-        // Si 429 en el último modelo y no hemos reintentado, esperar y reintentar
-        if (res.status === 429 && !_retry) {
-            const errBody = await res.json().catch(() => ({}))
-            const retryMatch = errBody.error?.message?.match(/retry in ([\d.]+)s/i)
-            const waitSec = Math.min(retryMatch ? parseFloat(retryMatch[1]) : 15, 30)
-            console.warn(`⏳ Todos los modelos limitados — esperando ${Math.ceil(waitSec)}s...`)
-            await new Promise(r => setTimeout(r, (waitSec + 1) * 1000))
-            return callGemini(parts, maxTokens, true)
-        }
-
-        if (!res.ok) {
-            const e = await res.json().catch(() => ({}))
-            throw new Error(e.error?.message || `Gemini HTTP ${res.status}`)
-        }
-
-        const data = await res.json()
-        const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-        console.log('[Gemini raw]', raw.slice(0, 300))
-
-        // Capturar metadata de uso de tokens
-        const usageMetadata = data?.usageMetadata ?? {}
-
-        // Limpiar markdown code fences
-        let clean = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
-
-        // Helper para retornar parsed + metadata
-        const wrapResult = (parsed) => ({ parsed, usageMetadata, model })
-
-        // Intento 1: parsear directamente
-        try {
-            return wrapResult(JSON.parse(clean))
-        } catch { /* intentar extracción */ }
-
-        // Intento 2: extraer el primer bloque JSON {...} del texto
-        const jsonMatch = raw.match(/\{[\s\S]*\}/)
-        if (jsonMatch) {
-            try {
-                return wrapResult(JSON.parse(jsonMatch[0]))
-            } catch { /* falló también */ }
-        }
-
-        // Intento 3: extraer array JSON [{...}]
-        const arrMatch = raw.match(/\[[\s\S]*\]/)
-        if (arrMatch) {
-            try {
-                return wrapResult({ items: JSON.parse(arrMatch[0]) })
-            } catch { /* falló */ }
-        }
-
-        console.error('Gemini devolvió JSON inválido:', clean.slice(0, 300))
-        throw new Error('La IA no devolvió datos válidos. Intenta de nuevo.')
+    // Error de red o invocación
+    if (error) {
+        console.error('Edge Function error:', error)
+        throw new Error(error.message || 'Error al conectar con el servidor de IA')
     }
 
-    throw new Error('Todos los modelos de IA están temporalmente no disponibles')
+    // Error devuelto por la Edge Function (ej: 429, 500)
+    if (data?.error) {
+        throw new Error(data.error)
+    }
+
+    // Extraer respuesta de Gemini
+    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+    console.log('[Gemini raw]', raw.slice(0, 300))
+
+    // Capturar metadata de uso de tokens y modelo usado
+    const usageMetadata = data?.usageMetadata ?? {}
+    const model = data?._model ?? 'gemini-2.5-flash'
+
+    // Limpiar markdown code fences
+    let clean = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+
+    // Helper para retornar parsed + metadata
+    const wrapResult = (parsed) => ({ parsed, usageMetadata, model })
+
+    // Intento 1: parsear directamente
+    try {
+        return wrapResult(JSON.parse(clean))
+    } catch { /* intentar extracción */ }
+
+    // Intento 2: extraer el primer bloque JSON {...} del texto
+    const jsonMatch = raw.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+        try {
+            return wrapResult(JSON.parse(jsonMatch[0]))
+        } catch { /* falló también */ }
+    }
+
+    // Intento 3: extraer array JSON [{...}]
+    const arrMatch = raw.match(/\[[\s\S]*\]/)
+    if (arrMatch) {
+        try {
+            return wrapResult({ items: JSON.parse(arrMatch[0]) })
+        } catch { /* falló */ }
+    }
+
+    console.error('Gemini devolvió JSON inválido:', clean.slice(0, 300))
+    throw new Error('La IA no devolvió datos válidos. Intenta de nuevo.')
 }
 
 /** Límites razonables para validación de datos de Gemini */
