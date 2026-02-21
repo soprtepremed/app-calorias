@@ -180,14 +180,32 @@ export default function App() {
     const unsub = onAuthChange(async (sess, event) => {
       if (event === 'SIGNED_IN' && sess) {
         setSession(sess)
-        // Cargar config del usuario
+
+        // Cargar config — si onboarding_done es false, hacer polling
+        // para esperar a que Register.handleCreate complete el updateConfig.
+        // Esto evita la carrera: signUp → SIGNED_IN → desmonta Register.
         try {
-          const cfg = await getConfig()
+          let cfg = await getConfig()
+
+          // Polling: si el onboarding NO está completo, esperar a que
+          // Register termine de guardar el perfil (max 15s, cada 600ms)
+          if (cfg && !cfg.onboarding_done) {
+            const MAX_WAIT = 15000
+            const INTERVAL = 600
+            const start = Date.now()
+            while (Date.now() - start < MAX_WAIT) {
+              await new Promise(r => setTimeout(r, INTERVAL))
+              cfg = await getConfig()
+              if (cfg?.onboarding_done) break
+            }
+          }
+
           setConfig(cfg)
           setConfigId(cfg?.id)
         } catch (e) {
           console.error('Error cargando config:', e)
         }
+
         // Sincronizar cola offline
         if (hasPending()) {
           flushQueue().then(n => {

@@ -242,7 +242,7 @@ export default function Register({ onBack }) {
                     activity_level: activity,
                     calorie_goal: calorieGoal,
                     water_goal: waterGoal,
-                    protein_goal: proteinGoal,             // ← corregido (era protein_goal_g)
+                    protein_goal_g: proteinGoal,          // columna real en BD
                     ai_recommendations: recommendations.join('\n'),
                     onboarding_done: true,
                 })
