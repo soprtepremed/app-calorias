@@ -154,7 +154,7 @@ function normalizeItem(i, source = 'photo') {
  */
 export async function analyzeFoodPhoto(imageFile) {
     const { base64, mimeType } = await toBase64(imageFile)
-    // Las imágenes necesitan más tokens (el modelo genera pensamiento + JSON largo)
+    // Edge Function aplica Math.max(8192) para pensamiento + JSON de múltiples items
     const { parsed, usageMetadata, model } = await callGemini([
         { text: SCAN_PROMPT },
         { inlineData: { mimeType, data: base64 } },
@@ -224,8 +224,8 @@ Devuelve ÚNICAMENTE JSON válido (sin markdown):
 }
 Usa datos USDA. Redondea a 1 decimal.`
 
-    // maxOutputTokens: 1024 (Gemini 2.5-flash usa pensamiento interno
-    // que consume tokens — con 256 el JSON se truncaba)
+    // El frontend envía 1024, pero la Edge Function aplica Math.max(8192)
+    // para que el pensamiento interno de Gemini 2.5-flash no trunque el JSON.
     const { parsed, usageMetadata, model } = await callGemini([{ text: prompt }], 1024)
 
     // Registrar consumo de tokens
@@ -322,6 +322,7 @@ Devuelve ÚNICAMENTE un JSON válido (sin markdown):
 }`
 
     try {
+        // Edge Function aplica min 8192 tokens server-side
         const { parsed, usageMetadata, model } = await callGemini([{ text: prompt }], 512)
 
         // Registrar consumo de tokens
