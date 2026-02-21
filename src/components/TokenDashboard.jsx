@@ -12,9 +12,9 @@
 
 import { useState, useEffect } from 'react'
 import { getTokenStats } from '../services/tokenLogger'
+import { supabase } from '../services/supabase'
 
 // ── Constantes ──────────────────────────────────────────────────────────────
-const ADMIN_PIN = '1702'
 const MXN_RATE = 17.15  // Tipo de cambio USD→MXN aproximado
 
 /** Labels amigables para cada tipo de función */
@@ -33,10 +33,29 @@ function PinGate({ onUnlock }) {
     const [pin, setPin] = useState('')
     const [error, setError] = useState(false)
     const [shake, setShake] = useState(false)
+    const [dbPin, setDbPin] = useState(null)
+    const [loadingPin, setLoadingPin] = useState(true)
+
+    // Cargar el PIN desde la BD al montar
+    useEffect(() => {
+        supabase.from('user_config').select('admin_pin')
+            .not('admin_pin', 'is', null)
+            .single()
+            .then(({ data }) => {
+                setDbPin(data?.admin_pin ?? null)
+                setLoadingPin(false)
+            })
+    }, [])
+
+    /** Verifica el PIN contra el valor de la BD */
+    const checkPin = (value) => {
+        if (!dbPin) return false
+        return value === dbPin
+    }
 
     const handleSubmit = (e) => {
         e?.preventDefault()
-        if (pin === ADMIN_PIN) {
+        if (checkPin(pin)) {
             onUnlock()
         } else {
             setError(true)
@@ -53,7 +72,7 @@ function PinGate({ onUnlock }) {
         setPin(next)
         if (next.length === 4) {
             setTimeout(() => {
-                if (next === ADMIN_PIN) onUnlock()
+                if (checkPin(next)) onUnlock()
                 else {
                     setError(true)
                     setShake(true)
@@ -317,7 +336,12 @@ function DashboardContent() {
                 <StatCard
                     icon="💰" label="Total USD"
                     value={'$' + totalCost.toFixed(4)}
-                    sub={`≈ $${(totalCost * MXN_RATE).toFixed(2)} MXN`}
+                    color="#34D399"
+                />
+                <StatCard
+                    icon="🇲🇽" label="Total MXN"
+                    value={'$' + (totalCost * MXN_RATE).toFixed(2)}
+                    sub={`TC: $${MXN_RATE} MXN/USD`}
                     color="#34D399"
                 />
                 <StatCard
@@ -425,10 +449,15 @@ function DashboardContent() {
                                     {data.count} llamadas • {data.total.toLocaleString()} tokens
                                 </div>
                             </div>
-                            <div style={{
-                                fontSize: 14, fontWeight: 700, color: '#818CF8',
-                            }}>
-                                ${data.cost.toFixed(4)}
+                            <div style={{ textAlign: 'right' }}>
+                                <div style={{
+                                    fontSize: 14, fontWeight: 700, color: '#818CF8',
+                                }}>
+                                    ${data.cost.toFixed(4)}
+                                </div>
+                                <div style={{ fontSize: 11, color: '#555570' }}>
+                                    ${(data.cost * MXN_RATE).toFixed(2)} MXN
+                                </div>
                             </div>
                         </div>
                     ))}
