@@ -36,8 +36,8 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: {
                     facingMode: 'environment',   // cámara trasera
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
+                    width: { ideal: 720 },       // resolución vertical de teléfono
+                    height: { ideal: 960 },      // aspect ratio ~4:3 (vertical)
                 },
                 audio: false,
             })
@@ -72,14 +72,17 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
         const canvas = canvasRef.current
         if (!video || !canvas) return
 
-        // 1. Dibujar frame actual en canvas
-        canvas.width = video.videoWidth || 1280
-        canvas.height = video.videoHeight || 720
+        // 1. Dibujar frame actual en canvas (max 1024px para no saturar Gemini)
+        const vw = video.videoWidth || 720
+        const vh = video.videoHeight || 960
+        const scale = Math.min(1, 1024 / Math.max(vw, vh))
+        canvas.width = Math.round(vw * scale)
+        canvas.height = Math.round(vh * scale)
         const ctx = canvas.getContext('2d')
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
 
         // 2. Obtener dataURL y base64 sin prefijo
-        const dataURL = canvas.toDataURL('image/jpeg', 0.85)
+        const dataURL = canvas.toDataURL('image/jpeg', 0.90)
         const base64 = dataURL.split(',')[1]
         setSnapshot(dataURL)
 

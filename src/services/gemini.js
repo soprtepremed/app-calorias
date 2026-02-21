@@ -130,7 +130,7 @@ async function callGemini(parts, maxTokens = 1024, _retry = false) {
         }
 
         console.error('Gemini devolvió JSON inválido:', clean.slice(0, 300))
-        return { items: [] } // Fallback seguro en vez de crash
+        throw new Error('La IA no devolvió datos válidos. Intenta de nuevo.')
     }
 
     throw new Error('Todos los modelos de IA están temporalmente no disponibles')
@@ -172,10 +172,11 @@ function normalizeItem(i, source = 'photo') {
  */
 export async function analyzeFoodPhoto(imageFile) {
     const { base64, mimeType } = await toBase64(imageFile)
+    // Las imágenes necesitan más tokens (el modelo genera pensamiento + JSON largo)
     const parsed = await callGemini([
         { text: SCAN_PROMPT },
         { inlineData: { mimeType, data: base64 } },
-    ])
+    ], 2048)
     return {
         items: (parsed.items ?? []).map(i => normalizeItem(i, 'photo')),
         confidence: parsed.confidence ?? 'media',
@@ -191,7 +192,7 @@ export async function analyzeBase64Frame(base64jpeg) {
     const parsed = await callGemini([
         { text: SCAN_PROMPT },
         { inlineData: { mimeType: 'image/jpeg', data: base64jpeg } },
-    ])
+    ], 2048)
     return {
         items: (parsed.items ?? []).map(i => normalizeItem(i, 'scan')),
         confidence: parsed.confidence ?? 'media',
