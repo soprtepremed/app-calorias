@@ -236,19 +236,19 @@ export default function Register({ onBack }) {
                     weight_kg: Number(weight),
                     height_cm: Number(height),
                     bmi: bmi,
-                    bmi_category: bmiCat?.label ?? null,   // ← antes no se guardaba
                     age: Number(age),
                     sex,
                     activity_level: activity,
                     calorie_goal: calorieGoal,
                     water_goal: waterGoal,
-                    protein_goal_g: proteinGoal,          // columna real en BD
+                    protein_goal_g: proteinGoal,
                     ai_recommendations: recommendations.join('\n'),
                     onboarding_done: true,
                 })
             }
             // onAuthChange en App.jsx detecta la sesión automáticamente
         } catch (err) {
+            console.error('Error en handleCreate:', err)
             const msg = err.message ?? ''
             if (msg.includes('already registered')) setError('Este email ya está registrado')
             else setError(msg || 'Error al crear la cuenta')
