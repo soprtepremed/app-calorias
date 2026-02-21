@@ -1,17 +1,20 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import './index.css'
 import { getConfig, getSession, onAuthChange, signOut } from './services/supabase'
 import { requestNotificationPermission, startWaterReminder, stopWaterReminder } from './services/water'
 import { initOfflineSync, flushQueue, hasPending } from './services/offlineQueue'
 import Auth from './components/Auth'
 import Dashboard from './components/Dashboard'
-import History from './components/History'
-import Weight from './components/Weight'
-import Settings from './components/Settings'
-import TokenDashboard from './components/TokenDashboard'
-import CameraScanner from './components/CameraScanner'
 import { Toast } from './components/UI'
 import { HomeIcon, ChartIcon, ScaleIcon, SettingsIcon, FlameIcon, TokenIcon } from './components/Icons'
+
+// ── Lazy imports — se cargan bajo demanda al navegar ────────────────────────
+// Reduce el bundle inicial de ~507KB a ~200KB
+const History = lazy(() => import('./components/History'))
+const Weight = lazy(() => import('./components/Weight'))
+const Settings = lazy(() => import('./components/Settings'))
+const TokenDashboard = lazy(() => import('./components/TokenDashboard'))
+const CameraScanner = lazy(() => import('./components/CameraScanner'))
 
 // Email del administrador — único con acceso al panel de tokens IA
 const ADMIN_EMAIL = 'carlosadolforuizlopez@gmail.com'
@@ -26,7 +29,7 @@ const NAV_ITEMS = [
 // Pestaña extra para admin — se agrega dinámicamente
 const ADMIN_NAV = { key: 'tokens', label: 'Tokens', Icon: TokenIcon }
 
-// ── Loading screen ──────────────────────────────────────────────────────────
+// ── Loading screen (inicio de app) ──────────────────────────────────────────
 function LoadingScreen() {
   return (
     <div className="flex flex-col items-center justify-center min-h-dvh bg-[#0D0D11]">
@@ -38,6 +41,18 @@ function LoadingScreen() {
         </div>
       </div>
       <p className="text-[#8E8EA0] text-sm font-semibold tracking-widest uppercase">Cargando</p>
+    </div>
+  )
+}
+
+// ── Lazy fallback (mini-spinner para chunks bajo demanda) ───────────────────
+function LazySpinner() {
+  return (
+    <div className="flex items-center justify-center py-20 animate-fade-up">
+      <div className="relative w-10 h-10">
+        <div className="absolute inset-0 border-3 border-white/5 rounded-full" />
+        <div className="absolute inset-0 border-3 border-transparent border-t-[#FF375F] rounded-full spinner" />
+      </div>
     </div>
   )
 }
@@ -258,21 +273,29 @@ export default function App() {
 
   // ── Contenido por página ────────────────────────────────────────────────
   const PageContent = () => {
+    // Dashboard se carga estáticamente (siempre visible)
+    if (page === 'dashboard') {
+      return <Dashboard config={config} showToast={showToast} onGlassesChange={updateGlassesRef} onOpenScanner={() => setScanner(true)} />
+    }
+
+    // Resto de páginas se cargan lazy (bajo demanda)
+    let LazyPage = null
     switch (page) {
-      case 'dashboard': return <Dashboard config={config} showToast={showToast} onGlassesChange={updateGlassesRef} onOpenScanner={() => setScanner(true)} />
-      case 'history': return <History config={config} />
-      case 'weight': return <Weight showToast={showToast} />
-      case 'settings': return (
+      case 'history': LazyPage = <History config={config} />; break
+      case 'weight': LazyPage = <Weight showToast={showToast} />; break
+      case 'settings': LazyPage = (
         <Settings
           config={config}
           configId={configId}
           onConfigUpdate={u => setConfig(c => ({ ...c, ...u }))}
           showToast={showToast}
         />
-      )
-      case 'tokens': return <TokenDashboard />
+      ); break
+      case 'tokens': LazyPage = <TokenDashboard />; break
       default: return null
     }
+
+    return <Suspense fallback={<LazySpinner />}>{LazyPage}</Suspense>
   }
 
   return (
@@ -349,17 +372,19 @@ export default function App() {
 
       <Toast toast={toast} />
 
-      {/* Scanner de cámara — a nivel RAÍZ para cubrir todo */}
-      <CameraScanner
-        open={scanner}
-        onClose={() => setScanner(false)}
-        onSave={items => {
-          // Delegamos al Dashboard via evento custom
-          window.dispatchEvent(new CustomEvent('scanner-save', { detail: items }))
-          setScanner(false)
-        }}
-        showToast={showToast}
-      />
+      {/* Scanner de cámara — a nivel RAÍZ para cubrir todo (lazy) */}
+      <Suspense fallback={null}>
+        <CameraScanner
+          open={scanner}
+          onClose={() => setScanner(false)}
+          onSave={items => {
+            // Delegamos al Dashboard via evento custom
+            window.dispatchEvent(new CustomEvent('scanner-save', { detail: items }))
+            setScanner(false)
+          }}
+          showToast={showToast}
+        />
+      </Suspense>
     </div>
   )
 }
