@@ -1,6 +1,12 @@
 /**
  * CameraScanner.jsx — Escáner de comida fullscreen con IA.
  *
+ * Features:
+ *   - Tap-to-focus: toca la pantalla para enfocar en un punto específico
+ *   - Flash/Torch: botón para encender/apagar la linterna de la cámara
+ *   - Resolución HD: solicita 1080p para mejor detección de IA
+ *   - Autofocus continuo como fallback
+ *
  * Fases:
  *   1. 'camera'    → Viewfinder fullscreen (cámara abierta)
  *   2. 'analyzing' → Overlay de progreso sobre el snapshot
@@ -22,12 +28,19 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
     const videoRef = useRef(null)
     const canvasRef = useRef(null)
     const streamRef = useRef(null)
+    const trackRef = useRef(null) // Referencia al track de video para controlar flash/focus
 
     const [phase, setPhase] = useState('camera')       // 'camera' | 'analyzing' | 'review'
     const [snapshot, setSnapshot] = useState(null)      // dataURL del frame capturado
     const [items, setItems] = useState([])              // alimentos detectados
     const [checked, setChecked] = useState([])          // índices seleccionados
     const [scanning, setScanning] = useState(false)     // guard contra doble-tap
+
+    // ── Flash y Focus ────────────────────────────────────────────────────────
+    const [flashOn, setFlashOn] = useState(false)
+    const [flashSupported, setFlashSupported] = useState(false)
+    const [focusPoint, setFocusPoint] = useState(null)  // { x, y } para la animación
+    const focusTimerRef = useRef(null)
 
     // ── Abrir / cerrar stream de cámara ─────────────────────────────────────
     useEffect(() => {
@@ -40,17 +53,34 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: {
                     facingMode: 'environment',
-                    width: { ideal: 720 },
-                    height: { ideal: 1280 },
+                    // Solicitar alta resolución para mejor enfoque y detección IA
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 },
                 },
                 audio: false,
             })
             streamRef.current = stream
+
+            // Obtener el track de video para acceder a capabilities (flash, focus)
+            const track = stream.getVideoTracks()[0]
+            trackRef.current = track
+
+            // Detectar si el dispositivo soporta torch (flash)
+            if (track) {
+                try {
+                    const capabilities = track.getCapabilities?.()
+                    if (capabilities?.torch) {
+                        setFlashSupported(true)
+                    }
+                } catch { /* getCapabilities no soportado en algunos navegadores */ }
+            }
+
             if (videoRef.current) {
                 videoRef.current.srcObject = stream
                 videoRef.current.play()
             }
             setPhase('camera')
+            setFlashOn(false)
         } catch (e) {
             console.error('Error cámara:', e)
             const msg = e.name === 'NotAllowedError'
@@ -66,7 +96,72 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
     const stopCamera = () => {
         streamRef.current?.getTracks().forEach(t => t.stop())
         streamRef.current = null
+        trackRef.current = null
+        setFlashOn(false)
+        setFlashSupported(false)
     }
+
+    // ── Toggle Flash / Linterna ──────────────────────────────────────────────
+    const toggleFlash = async () => {
+        const track = trackRef.current
+        if (!track) return
+        try {
+            const newState = !flashOn
+            await track.applyConstraints({
+                advanced: [{ torch: newState }],
+            })
+            setFlashOn(newState)
+        } catch (e) {
+            console.warn('Flash no disponible:', e)
+            showToast('📸 Flash no disponible en este dispositivo')
+        }
+    }
+
+    // ── Tap-to-Focus ─────────────────────────────────────────────────────────
+    /**
+     * Al tocar la pantalla, calcula el punto de enfoque relativo al video
+     * y lo aplica como "pointOfInterest" en los constraints del track.
+     * Muestra una animación visual en el punto tocado.
+     */
+    const handleTapToFocus = useCallback((e) => {
+        if (phase !== 'camera') return
+        const track = trackRef.current
+        if (!track) return
+
+        // Obtener coordenadas relativas al contenedor del video
+        const rect = e.currentTarget.getBoundingClientRect()
+        const x = (e.clientX - rect.left) / rect.width
+        const y = (e.clientY - rect.top) / rect.height
+
+        // Mostrar animación del reticle de enfoque
+        setFocusPoint({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+        clearTimeout(focusTimerRef.current)
+        focusTimerRef.current = setTimeout(() => setFocusPoint(null), 1200)
+
+        // Intentar aplicar focus al track
+        try {
+            const capabilities = track.getCapabilities?.()
+            // Verificar si el dispositivo soporta focusMode manual o 'single-shot'
+            if (capabilities?.focusMode?.includes('manual') || capabilities?.focusMode?.includes('single-shot')) {
+                track.applyConstraints({
+                    advanced: [{
+                        focusMode: 'manual',
+                        pointOfInterest: { x, y },
+                    }],
+                }).catch(() => {
+                    // Fallback: intentar solo con single-shot (Android Chrome)
+                    track.applyConstraints({
+                        advanced: [{ focusMode: 'single-shot' }],
+                    }).catch(() => { /* Sin soporte de focus manual */ })
+                })
+            } else if (capabilities?.focusMode?.includes('continuous')) {
+                // Si solo hay continuous, forzar un re-focus
+                track.applyConstraints({
+                    advanced: [{ focusMode: 'continuous' }],
+                }).catch(() => { })
+            }
+        } catch { /* getCapabilities no soportado */ }
+    }, [phase])
 
     // ── Capturar frame y analizar ────────────────────────────────────────────
     const handleScan = useCallback(async () => {
@@ -75,17 +170,24 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
         const canvas = canvasRef.current
         if (!video || !canvas) return
 
-        const vw = video.videoWidth || 720
-        const vh = video.videoHeight || 1280
-        const scale = Math.min(1, 1024 / Math.max(vw, vh))
+        const vw = video.videoWidth || 1920
+        const vh = video.videoHeight || 1080
+        const scale = Math.min(1, 1280 / Math.max(vw, vh))
         canvas.width = Math.round(vw * scale)
         canvas.height = Math.round(vh * scale)
         const ctx = canvas.getContext('2d')
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
 
-        const dataURL = canvas.toDataURL('image/jpeg', 0.90)
+        const dataURL = canvas.toDataURL('image/jpeg', 0.92)
         const base64 = dataURL.split(',')[1]
         setSnapshot(dataURL)
+
+        // Apagar flash antes de detener la cámara
+        if (flashOn) {
+            try {
+                await trackRef.current?.applyConstraints({ advanced: [{ torch: false }] })
+            } catch { /* ignore */ }
+        }
 
         stopCamera()
         setPhase('analyzing')
@@ -111,7 +213,7 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
         } finally {
             setScanning(false)
         }
-    }, [scanning])
+    }, [scanning, flashOn])
 
     // ── Reiniciar (volver a la cámara) ───────────────────────────────────────
     const restart = () => {
@@ -146,8 +248,14 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
         setSnapshot(null)
         setItems([])
         setChecked([])
+        setFocusPoint(null)
         onClose()
     }
+
+    // Limpiar timers al desmontar
+    useEffect(() => {
+        return () => clearTimeout(focusTimerRef.current)
+    }, [])
 
     if (!open) return null
 
@@ -209,29 +317,59 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
     // ═══════════════════════════════════════════════════════════════════
     return (
         <div style={rootStyle}>
-            {/* Header */}
+            {/* Header con título + flash + cerrar */}
             <div style={headerStyle}>
                 <div className="flex items-center gap-2">
                     <SparkIcon size={18} className="text-[#FF6B1A]" />
                     <span className="text-white font-bold text-sm tracking-wide">Escáner IA</span>
                 </div>
-                <button
-                    onClick={handleClose}
-                    className="w-8 h-8 flex items-center justify-center rounded-full
-                     bg-white/10 text-white hover:bg-white/20 transition-colors"
-                >
-                    <XIcon size={18} />
-                </button>
+                <div className="flex items-center gap-2">
+                    {/* Botón Flash — solo visible si el dispositivo lo soporta */}
+                    {flashSupported && phase === 'camera' && (
+                        <button
+                            onClick={toggleFlash}
+                            className="w-9 h-9 flex items-center justify-center rounded-full transition-all"
+                            style={{
+                                background: flashOn
+                                    ? 'rgba(255,214,10,0.25)'
+                                    : 'rgba(255,255,255,0.1)',
+                                border: flashOn
+                                    ? '1.5px solid rgba(255,214,10,0.5)'
+                                    : '1.5px solid transparent',
+                            }}
+                            aria-label={flashOn ? 'Apagar flash' : 'Encender flash'}
+                        >
+                            {/* Icono de rayo/flash */}
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                stroke={flashOn ? '#FFD60A' : '#ffffff80'}
+                                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                            </svg>
+                        </button>
+                    )}
+                    {/* Botón cerrar */}
+                    <button
+                        onClick={handleClose}
+                        className="w-9 h-9 flex items-center justify-center rounded-full
+                         bg-white/10 text-white hover:bg-white/20 transition-colors"
+                    >
+                        <XIcon size={18} />
+                    </button>
+                </div>
             </div>
 
-            {/* Viewfinder fullscreen */}
-            <div style={{
-                flex: 1,
-                position: 'relative',
-                overflow: 'hidden',
-                background: '#000',
-                minHeight: 0,
-            }}>
+            {/* Viewfinder fullscreen — TOCA PARA ENFOCAR */}
+            <div
+                onClick={handleTapToFocus}
+                style={{
+                    flex: 1,
+                    position: 'relative',
+                    overflow: 'hidden',
+                    background: '#000',
+                    minHeight: 0,
+                    cursor: phase === 'camera' ? 'crosshair' : 'default',
+                }}
+            >
                 {/* Video en vivo */}
                 <video
                     ref={videoRef}
@@ -264,6 +402,47 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
                             objectFit: 'cover',
                         }}
                     />
+                )}
+
+                {/* ── Animación de enfoque (reticle) ── */}
+                {focusPoint && phase === 'camera' && (
+                    <div style={{
+                        position: 'absolute',
+                        left: focusPoint.x - 30,
+                        top: focusPoint.y - 30,
+                        width: 60,
+                        height: 60,
+                        pointerEvents: 'none',
+                        zIndex: 30,
+                    }}>
+                        {/* Cuadro de enfoque con animación */}
+                        <div style={{
+                            width: '100%',
+                            height: '100%',
+                            border: '2px solid rgba(255,214,10,0.9)',
+                            borderRadius: 8,
+                            animation: 'focusPulse 0.8s ease-out',
+                            boxShadow: '0 0 20px rgba(255,214,10,0.3)',
+                        }} />
+                        {/* Cruz central */}
+                        <div style={{
+                            position: 'absolute',
+                            top: '50%', left: '50%',
+                            transform: 'translate(-50%,-50%)',
+                            width: 12, height: 12,
+                        }}>
+                            <div style={{
+                                position: 'absolute', top: '50%', left: 0,
+                                width: '100%', height: 1,
+                                background: 'rgba(255,214,10,0.7)',
+                            }} />
+                            <div style={{
+                                position: 'absolute', left: '50%', top: 0,
+                                height: '100%', width: 1,
+                                background: 'rgba(255,214,10,0.7)',
+                            }} />
+                        </div>
+                    </div>
                 )}
 
                 {/* Overlay de análisis */}
@@ -326,7 +505,7 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
                             </div>
                         ))}
 
-                        {/* Hint */}
+                        {/* Hint actualizado */}
                         <div style={{
                             position: 'absolute',
                             bottom: 20, left: 0, right: 0,
@@ -334,7 +513,7 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
                         }}>
                             <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full">
                                 <p className="text-white/80 text-xs font-semibold text-center">
-                                    Apunta al plato y toca Escanear
+                                    Toca para enfocar · Luego presiona Escanear
                                 </p>
                             </div>
                         </div>
@@ -363,6 +542,15 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
                     </div>
                 )}
             </div>
+
+            {/* Animación CSS para el reticle de enfoque */}
+            <style>{`
+                @keyframes focusPulse {
+                    0% { transform: scale(1.5); opacity: 0; }
+                    30% { transform: scale(1); opacity: 1; }
+                    100% { transform: scale(0.95); opacity: 0.6; }
+                }
+            `}</style>
         </div>
     )
 }
