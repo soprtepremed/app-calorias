@@ -1,0 +1,617 @@
+import { useState, useEffect } from 'react'
+import { signUp, updateConfig, getConfig } from '../services/supabase'
+import { generateOnboardingRecommendations } from '../services/gemini'
+import { FlameIcon, SparkIcon, DropIcon, ScaleIcon, CheckIcon } from './Icons'
+
+// ── Helpers de cálculo ──────────────────────────────────────────────────────
+
+/** Índice de Masa Corporal */
+function calcBMI(weightKg, heightCm) {
+    const h = heightCm / 100
+    return parseFloat((weightKg / (h * h)).toFixed(1))
+}
+
+/** Categoría IMC */
+function bmiCategory(bmi) {
+    if (bmi < 18.5) return { label: 'Bajo peso', color: '#0A84FF', emoji: '📉' }
+    if (bmi < 25) return { label: 'Normal', color: '#30D158', emoji: '✅' }
+    if (bmi < 30) return { label: 'Sobrepeso', color: '#FF9F0A', emoji: '⚠️' }
+    return { label: 'Obesidad', color: '#FF375F', emoji: '🔴' }
+}
+
+/**
+ * TDEE con Harris-Benedict * factor de actividad.
+ * Redondea a 50 kcal más cercanas.
+ */
+function calcTDEE(weightKg, heightCm, age, sex, activity) {
+    let bmr
+    if (sex === 'M') {
+        bmr = 88.362 + (13.397 * weightKg) + (4.799 * heightCm) - (5.677 * age)
+    } else {
+        bmr = 447.593 + (9.247 * weightKg) + (3.098 * heightCm) - (4.330 * age)
+    }
+    const factors = { sedentario: 1.2, ligero: 1.375, moderado: 1.55, activo: 1.725, muy_activo: 1.9 }
+    const tdee = bmr * (factors[activity] ?? 1.55)
+    return Math.round(tdee / 50) * 50
+}
+
+/** Agua recomendada: 35ml por kg → vasos de 250ml */
+function calcWaterGoal(weightKg) {
+    return Math.max(6, Math.min(12, Math.round((weightKg * 35) / 250)))
+}
+
+/** Proteína recomendada: 1.6g/kg para actividad moderada */
+function calcProteinGoal(weightKg, activity) {
+    const factor = { sedentario: 1.0, ligero: 1.3, moderado: 1.6, activo: 1.8, muy_activo: 2.0 }
+    return Math.round(weightKg * (factor[activity] ?? 1.6))
+}
+
+// ── Sub-componentes ─────────────────────────────────────────────────────────
+
+function StepIndicator({ step, total }) {
+    return (
+        <div className="flex items-center gap-1.5 mb-8">
+            {Array.from({ length: total }).map((_, i) => (
+                <div key={i} className={`h-1.5 rounded-full transition-all duration-500
+                    ${i < step ? 'bg-[#FF375F]' : i === step ? 'bg-[#FF375F]/60' : 'bg-[#2E2E3A]'}
+                    ${i === step ? 'flex-[2]' : 'flex-1'}`}
+                />
+            ))}
+            <span className="text-[9px] font-black text-[#8E8EA0] ml-2 whitespace-nowrap">
+                {step + 1} / {total}
+            </span>
+        </div>
+    )
+}
+
+function FieldLabel({ children }) {
+    return (
+        <label className="text-[10px] font-black text-[#8E8EA0] uppercase tracking-widest block mb-2">
+            {children}
+        </label>
+    )
+}
+
+function TextInput({ id, type = 'text', value, onChange, placeholder, autoComplete, className = '' }) {
+    return (
+        <input id={id} type={type} value={value} onChange={onChange}
+            placeholder={placeholder} autoComplete={autoComplete}
+            className={`w-full px-4 py-3 bg-[#252530] border border-[#2E2E3A] rounded-xl
+                text-white placeholder-[#8E8EA0] focus:outline-none
+                focus:border-[#FF375F]/60 focus:ring-2 focus:ring-[#FF375F]/10
+                transition-all text-sm ${className}`}
+        />
+    )
+}
+
+function NextButton({ onClick, disabled, loading, children }) {
+    return (
+        <button onClick={onClick} disabled={disabled || loading}
+            className="w-full py-4 rounded-2xl font-black text-white text-sm
+                       disabled:opacity-40 disabled:cursor-not-allowed
+                       active:scale-95 transition-all flex items-center justify-center gap-3 mt-5"
+            style={{
+                background: 'linear-gradient(135deg,#FF375F,#FF6B1A)',
+                boxShadow: '0 4px 20px rgba(255,55,95,0.4)',
+            }}>
+            {loading
+                ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full spinner" />
+                : children
+            }
+        </button>
+    )
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// REGISTER WIZARD — 4 pasos
+// ════════════════════════════════════════════════════════════════════════════
+export default function Register({ onBack }) {
+    const TOTAL_STEPS = 4
+
+    // ── Estado global del formulario ────────────────────────────────────────
+    const [step, setStep] = useState(0)
+    const [showPass, setShowPass] = useState(false)
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState(null)
+
+    // Paso 1 — Credenciales
+    const [firstName, setFirstName] = useState('')
+    const [secondName, setSecondName] = useState('')
+    const [firstLastname, setFirstLastname] = useState('')
+    const [secondLastname, setSecondLastname] = useState('')
+    const [email, setEmail] = useState('')
+    const [pass, setPass] = useState('')
+    const [passConfirm, setPassConfirm] = useState('')
+
+    // Paso 2 — Perfil físico
+    const [weight, setWeight] = useState('')
+    const [height, setHeight] = useState('')
+    const [age, setAge] = useState('')
+    const [sex, setSex] = useState('M')
+
+    // Paso 3 — Metas (calculadas, editables)
+    const [activity, setActivity] = useState('moderado')
+    const [calorieGoal, setCalorieGoal] = useState(2000)
+    const [waterGoal, setWaterGoal] = useState(8)
+    const [proteinGoal, setProteinGoal] = useState(120)
+
+    // Paso 4 — Recomendaciones IA
+    const [recommendations, setRecommendations] = useState([])
+    const [aiLoading, setAiLoading] = useState(false)
+
+    // IMC calculado
+    const bmi = weight && height ? calcBMI(Number(weight), Number(height)) : null
+    const bmiCat = bmi ? bmiCategory(bmi) : null
+
+    // Recalcular metas cuando cambia el perfil
+    useEffect(() => {
+        if (weight && height && age && sex && activity) {
+            const tdee = calcTDEE(Number(weight), Number(height), Number(age), sex, activity)
+            const water = calcWaterGoal(Number(weight))
+            const protein = calcProteinGoal(Number(weight), activity)
+            setCalorieGoal(tdee)
+            setWaterGoal(water)
+            setProteinGoal(protein)
+        }
+    }, [weight, height, age, sex, activity])
+
+    // ── Validaciones por paso ────────────────────────────────────────────────
+    const validate = () => {
+        setError(null)
+        if (step === 0) {
+            if (!firstName.trim()) return setError('Escribe tu primer nombre') || false
+            if (!firstLastname.trim()) return setError('Escribe tu primer apellido') || false
+            if (!email.includes('@')) return setError('Email inválido') || false
+            if (pass.length < 6) return setError('La contraseña debe tener al menos 6 caracteres') || false
+            if (pass !== passConfirm) return setError('Las contraseñas no coinciden') || false
+        }
+        if (step === 1) {
+            if (!weight || Number(weight) < 20 || Number(weight) > 300)
+                return setError('Ingresa un peso válido (20-300 kg)') || false
+            if (!height || Number(height) < 100 || Number(height) > 250)
+                return setError('Ingresa una talla válida (100-250 cm)') || false
+            if (!age || Number(age) < 10 || Number(age) > 100)
+                return setError('Ingresa una edad válida (10-100 años)') || false
+        }
+        return true
+    }
+
+    // ── Avanzar paso ─────────────────────────────────────────────────────────
+    const nextStep = async () => {
+        if (!validate()) return
+
+        if (step === 2) {
+            // Ir a paso 4 y generar recomendaciones IA simultáneamente
+            setStep(3)
+            generateRecommendations()
+            return
+        }
+        setStep(s => s + 1)
+    }
+
+    // ── Generar recomendaciones IA ───────────────────────────────────────────
+    const generateRecommendations = async () => {
+        setAiLoading(true)
+        try {
+            const recs = await generateOnboardingRecommendations({
+                firstName,
+                weight: Number(weight),
+                height: Number(height),
+                bmi,
+                bmiCategory: bmiCat?.label ?? 'Normal',
+                age: Number(age),
+                sex,
+                activity,
+                calorieGoal,
+                waterGoal,
+            })
+            setRecommendations(recs)
+        } catch { /* usa el fallback de la función */ }
+        finally { setAiLoading(false) }
+    }
+
+    // ── Crear cuenta y guardar perfil ─────────────────────────────────────────
+    const handleCreate = async () => {
+        setLoading(true)
+        setError(null)
+        try {
+            const fullName = [firstName, secondName, firstLastname, secondLastname]
+                .filter(Boolean).join(' ')
+
+            // 1. Crear cuenta en Supabase Auth
+            const result = await signUp(email.trim(), pass, fullName, calorieGoal)
+
+            // 2. Esperar brevemente para que el trigger cree user_config
+            await new Promise(r => setTimeout(r, 800))
+
+            // 3. Obtener config recién creada y actualizarla con el perfil completo
+            const cfg = await getConfig()
+            if (cfg?.id) {
+                await updateConfig(cfg.id, {
+                    first_name: firstName.trim(),
+                    second_name: secondName.trim() || null,
+                    first_lastname: firstLastname.trim(),
+                    second_lastname: secondLastname.trim() || null,
+                    name: fullName,
+                    weight_kg: Number(weight),
+                    height_cm: Number(height),
+                    bmi: bmi,
+                    bmi_category: bmiCat?.label ?? null,   // ← antes no se guardaba
+                    age: Number(age),
+                    sex,
+                    activity_level: activity,
+                    calorie_goal: calorieGoal,
+                    water_goal: waterGoal,
+                    protein_goal: proteinGoal,             // ← corregido (era protein_goal_g)
+                    ai_recommendations: recommendations.join('\n'),
+                    onboarding_done: true,
+                })
+            }
+            // onAuthChange en App.jsx detecta la sesión automáticamente
+        } catch (err) {
+            const msg = err.message ?? ''
+            if (msg.includes('already registered')) setError('Este email ya está registrado')
+            else setError(msg || 'Error al crear la cuenta')
+            setStep(0) // Volver al primer paso
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const ACTIVITY_OPTIONS = [
+        { key: 'sedentario', label: 'Sedentario', sub: 'Sin ejercicio', emoji: '🛋️' },
+        { key: 'ligero', label: 'Ligero', sub: '1-2 días/semana', emoji: '🚶' },
+        { key: 'moderado', label: 'Moderado', sub: '3-5 días/semana', emoji: '🏃' },
+        { key: 'activo', label: 'Activo', sub: '6-7 días/semana', emoji: '💪' },
+        { key: 'muy_activo', label: 'Muy activo', sub: 'Ejercicio intenso diario', emoji: '🏋️' },
+    ]
+
+    // ─────────────────────────────────────────────────────────────────────────
+    return (
+        <div className="min-h-dvh bg-[#0D0D11] flex flex-col">
+
+            {/* Fondo decorativo */}
+            <div className="pointer-events-none fixed inset-0 overflow-hidden">
+                <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full opacity-20"
+                    style={{ background: 'radial-gradient(circle,#FF375F,transparent 70%)' }} />
+                <div className="absolute -bottom-24 -left-24 w-72 h-72 rounded-full opacity-10"
+                    style={{ background: 'radial-gradient(circle,#0A84FF,transparent 70%)' }} />
+                <div className="absolute inset-0 opacity-[0.025]"
+                    style={{ backgroundImage: 'radial-gradient(1px 1px at 1px 1px, white, transparent)', backgroundSize: '28px 28px' }} />
+            </div>
+
+            <div className="flex-1 flex flex-col px-5 py-8 relative max-w-sm mx-auto w-full">
+
+                {/* Logo + título */}
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                        style={{ background: 'linear-gradient(135deg,#FF375F,#FF6B1A)', boxShadow: '0 0 18px rgba(255,55,95,0.4)' }}>
+                        <FlameIcon size={20} className="text-white" />
+                    </div>
+                    <div>
+                        <h1 className="text-xl font-black text-white leading-none">Crear cuenta</h1>
+                        <p className="text-[10px] text-[#8E8EA0] mt-0.5">K-Cal · Calculadora de calorías con IA</p>
+                    </div>
+                </div>
+
+                <StepIndicator step={step} total={TOTAL_STEPS} />
+
+                {/* ══ PASO 0 — Datos personales y credenciales ══ */}
+                {step === 0 && (
+                    <div className="animate-fade-up space-y-4">
+                        <h2 className="text-lg font-black text-white mb-1">¿Cómo te llamas?</h2>
+                        <p className="text-[11px] text-[#8E8EA0] mb-4">
+                            Usaremos tu nombre para personalizar tus recomendaciones.
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <FieldLabel>Primer nombre *</FieldLabel>
+                                <TextInput id="r-fn" value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="María" />
+                            </div>
+                            <div>
+                                <FieldLabel>Segundo nombre</FieldLabel>
+                                <TextInput id="r-sn" value={secondName} onChange={e => setSecondName(e.target.value)} placeholder="Elena" />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <FieldLabel>Primer apellido *</FieldLabel>
+                                <TextInput id="r-fl" value={firstLastname} onChange={e => setFirstLastname(e.target.value)} placeholder="García" />
+                            </div>
+                            <div>
+                                <FieldLabel>Segundo apellido</FieldLabel>
+                                <TextInput id="r-sl" value={secondLastname} onChange={e => setSecondLastname(e.target.value)} placeholder="López" />
+                            </div>
+                        </div>
+
+                        <div className="h-px bg-[#2E2E3A] my-1" />
+
+                        <div>
+                            <FieldLabel>Email *</FieldLabel>
+                            <TextInput id="r-email" type="email" value={email} onChange={e => setEmail(e.target.value)}
+                                placeholder="correo@ejemplo.com" autoComplete="email" />
+                        </div>
+                        <div>
+                            <FieldLabel>Contraseña *</FieldLabel>
+                            <div className="relative">
+                                <TextInput id="r-pass" type={showPass ? 'text' : 'password'} value={pass}
+                                    onChange={e => setPass(e.target.value)}
+                                    placeholder="Mínimo 6 caracteres" autoComplete="new-password"
+                                    className="pr-12" />
+                                <button type="button" onClick={() => setShowPass(p => !p)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8E8EA0] hover:text-white transition-colors p-1">
+                                    {showPass
+                                        ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+                                        : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                                    }
+                                </button>
+                            </div>
+                        </div>
+                        <div>
+                            <FieldLabel>Confirmar contraseña *</FieldLabel>
+                            <div className="relative">
+                                <TextInput id="r-pass2" type={showPass ? 'text' : 'password'} value={passConfirm}
+                                    onChange={e => setPassConfirm(e.target.value)}
+                                    placeholder="Repite tu contraseña" autoComplete="new-password"
+                                    className="pr-12" />
+                                <button type="button" onClick={() => setShowPass(p => !p)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8E8EA0] hover:text-white transition-colors p-1">
+                                    {showPass
+                                        ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+                                        : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                                    }
+                                </button>
+                            </div>
+                        </div>
+
+                        {error && <p className="text-red-400 text-xs font-semibold">{error}</p>}
+
+                        <NextButton onClick={nextStep}>Continuar →</NextButton>
+
+                        <button onClick={onBack}
+                            className="w-full py-3 text-[#8E8EA0] text-sm font-semibold hover:text-white transition-colors">
+                            ← Ya tengo cuenta — Ingresar
+                        </button>
+                    </div>
+                )}
+
+                {/* ══ PASO 1 — Perfil físico ══ */}
+                {step === 1 && (
+                    <div className="animate-fade-up space-y-4">
+                        <h2 className="text-lg font-black text-white mb-1">Tu perfil físico</h2>
+                        <p className="text-[11px] text-[#8E8EA0] mb-4">
+                            Con estos datos calculamos tu IMC y tus metas personalizadas.
+                        </p>
+
+                        {/* Sexo */}
+                        <div>
+                            <FieldLabel>Sexo biológico</FieldLabel>
+                            <div className="grid grid-cols-3 gap-2">
+                                {[
+                                    { key: 'M', label: 'Hombre', emoji: '♂️' },
+                                    { key: 'F', label: 'Mujer', emoji: '♀️' },
+                                    { key: 'otro', label: 'Otro', emoji: '⚧️' },
+                                ].map(s => (
+                                    <button key={s.key} type="button" onClick={() => setSex(s.key)}
+                                        className={`py-2.5 rounded-xl text-sm font-black border transition-all
+                                            ${sex === s.key
+                                                ? 'bg-[#FF375F]/15 border-[#FF375F]/50 text-white'
+                                                : 'bg-transparent border-[#2E2E3A] text-[#8E8EA0]'}`}>
+                                        {s.emoji}<br />
+                                        <span className="text-[10px]">{s.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <FieldLabel>Edad (años) *</FieldLabel>
+                                <TextInput id="r-age" type="number" value={age} onChange={e => setAge(e.target.value)} placeholder="25" />
+                            </div>
+                            <div>
+                                <FieldLabel>Peso (kg) *</FieldLabel>
+                                <TextInput id="r-weight" type="number" value={weight} onChange={e => setWeight(e.target.value)} placeholder="70" />
+                            </div>
+                        </div>
+                        <div>
+                            <FieldLabel>Talla (cm) *</FieldLabel>
+                            <TextInput id="r-height" type="number" value={height} onChange={e => setHeight(e.target.value)} placeholder="170" />
+                            {height && (
+                                <p className="text-[10px] text-[#8E8EA0] mt-1">
+                                    = {(Number(height) / 100).toFixed(2)} m
+                                </p>
+                            )}
+                        </div>
+
+                        {/* IMC calculado en tiempo real */}
+                        {bmi && bmiCat && (
+                            <div className="rounded-2xl p-4 border animate-fade-up"
+                                style={{ background: `${bmiCat.color}12`, borderColor: `${bmiCat.color}40` }}>
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <p className="text-[9px] font-black text-[#8E8EA0] uppercase tracking-widest mb-1">
+                                            Índice de Masa Corporal
+                                        </p>
+                                        <p className="text-2xl font-black" style={{ color: bmiCat.color }}>
+                                            {bmi}
+                                        </p>
+                                        <p className="text-xs font-bold" style={{ color: bmiCat.color }}>
+                                            {bmiCat.emoji} {bmiCat.label}
+                                        </p>
+                                    </div>
+                                    <div className="text-4xl opacity-60">{bmiCat.emoji}</div>
+                                </div>
+                                {/* Barra IMC visual */}
+                                <div className="mt-3 h-2 rounded-full bg-[#2E2E3A] overflow-hidden">
+                                    <div className="h-full rounded-full transition-all"
+                                        style={{
+                                            width: `${Math.min(100, ((bmi - 15) / 25) * 100)}%`,
+                                            background: bmiCat.color,
+                                        }} />
+                                </div>
+                                <div className="flex justify-between text-[8px] text-[#8E8EA0] mt-1">
+                                    <span>15</span><span>18.5</span><span>25</span><span>30</span><span>40</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {error && <p className="text-red-400 text-xs font-semibold">{error}</p>}
+                        <NextButton onClick={nextStep}>Continuar →</NextButton>
+                        <button onClick={() => setStep(0)}
+                            className="w-full py-2 text-[#8E8EA0] text-sm font-semibold hover:text-white transition-colors">
+                            ← Regresar
+                        </button>
+                    </div>
+                )}
+
+                {/* ══ PASO 2 — Metas y actividad ══ */}
+                {step === 2 && (
+                    <div className="animate-fade-up space-y-4">
+                        <h2 className="text-lg font-black text-white mb-1">Tus metas diarias</h2>
+                        <p className="text-[11px] text-[#8E8EA0] mb-4">
+                            Calculadas automáticamente para ti — puedes ajustarlas.
+                        </p>
+
+                        {/* Actividad física */}
+                        <div>
+                            <FieldLabel>Nivel de actividad física</FieldLabel>
+                            <div className="space-y-2">
+                                {ACTIVITY_OPTIONS.map(a => (
+                                    <button key={a.key} type="button" onClick={() => setActivity(a.key)}
+                                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all
+                                            ${activity === a.key
+                                                ? 'bg-[#FF375F]/12 border-[#FF375F]/40 text-white'
+                                                : 'bg-transparent border-[#2E2E3A] text-[#8E8EA0] hover:border-[#FF375F]/20'}`}>
+                                        <span className="text-xl">{a.emoji}</span>
+                                        <div className="flex-1">
+                                            <p className="text-sm font-bold leading-none">{a.label}</p>
+                                            <p className="text-[10px] opacity-70 mt-0.5">{a.sub}</p>
+                                        </div>
+                                        {activity === a.key &&
+                                            <CheckIcon size={14} className="text-[#FF375F] shrink-0" />
+                                        }
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Calorías */}
+                        <div>
+                            <div className="flex justify-between items-center mb-2">
+                                <FieldLabel>Meta de calorías (kcal)</FieldLabel>
+                                <span className="text-[#FF375F] font-black text-sm">{calorieGoal}</span>
+                            </div>
+                            <input type="range" min="1000" max="4000" step="50"
+                                value={calorieGoal} onChange={e => setCalorieGoal(Number(e.target.value))}
+                                className="w-full accent-[#FF375F]" />
+                            <div className="flex justify-between text-[9px] text-[#8E8EA0] mt-1">
+                                <span>1000</span><span>Recomendado: {calcTDEE(Number(weight) || 70, Number(height) || 170, Number(age) || 25, sex, activity)}</span><span>4000</span>
+                            </div>
+                        </div>
+
+                        {/* Agua */}
+                        <div>
+                            <div className="flex justify-between items-center mb-2">
+                                <FieldLabel>Meta de agua (vasos de 250ml)</FieldLabel>
+                                <span className="text-[#5AC8FA] font-black text-sm">{waterGoal} 💧</span>
+                            </div>
+                            <input type="range" min="4" max="16" step="1"
+                                value={waterGoal} onChange={e => setWaterGoal(Number(e.target.value))}
+                                className="w-full accent-[#5AC8FA]" />
+                            <p className="text-[9px] text-[#8E8EA0] mt-1">
+                                {waterGoal * 250}ml/día · Recomendado: {calcWaterGoal(Number(weight) || 70)} vasos
+                            </p>
+                        </div>
+
+                        {/* Proteína */}
+                        <div className="rounded-xl p-3 bg-[#0A84FF]/10 border border-[#0A84FF]/25 flex items-center gap-3">
+                            <ScaleIcon size={16} className="text-[#0A84FF] shrink-0" />
+                            <p className="text-xs text-[#8E8EA0]">
+                                Meta proteína calculada: <span className="text-white font-black">{proteinGoal}g/día</span>
+                            </p>
+                        </div>
+
+                        <NextButton onClick={nextStep}>
+                            <SparkIcon size={18} /> Generar mis recomendaciones
+                        </NextButton>
+                        <button onClick={() => setStep(1)}
+                            className="w-full py-2 text-[#8E8EA0] text-sm font-semibold hover:text-white transition-colors">
+                            ← Regresar
+                        </button>
+                    </div>
+                )}
+
+                {/* ══ PASO 3 — Recomendaciones IA + Finalizar ══ */}
+                {step === 3 && (
+                    <div className="animate-fade-up space-y-4">
+                        <div className="flex items-center gap-3 mb-1">
+                            <SparkIcon size={20} className="text-[#FF375F]" />
+                            <h2 className="text-lg font-black text-white">
+                                {aiLoading ? 'Analizando tu perfil...' : `¡Hola, ${firstName}!`}
+                            </h2>
+                        </div>
+                        <p className="text-[11px] text-[#8E8EA0] mb-4">
+                            Gemini analizó tu perfil y preparó estos consejos para ti:
+                        </p>
+
+                        {/* Resumen del perfil */}
+                        <div className="grid grid-cols-3 gap-2 mb-2">
+                            {[
+                                { label: 'IMC', value: bmi ?? '—', unit: '', color: bmiCat?.color ?? '#8E8EA0' },
+                                { label: 'Meta', value: calorieGoal, unit: 'kcal', color: '#FF375F' },
+                                { label: 'Agua', value: waterGoal, unit: 'vasos', color: '#5AC8FA' },
+                            ].map(s => (
+                                <div key={s.label} className="rounded-2xl p-3 text-center"
+                                    style={{ background: `${s.color}12`, border: `1px solid ${s.color}30` }}>
+                                    <p className="text-base font-black" style={{ color: s.color }}>{s.value}</p>
+                                    <p className="text-[8px] text-[#8E8EA0]">{s.unit || ''}</p>
+                                    <p className="text-[8px] text-[#8E8EA0] font-bold uppercase">{s.label}</p>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Recomendaciones */}
+                        {aiLoading ? (
+                            <div className="space-y-2">
+                                {[1, 2, 3, 4, 5].map(i => (
+                                    <div key={i} className="h-14 rounded-xl bg-[#252530] animate-pulse" />
+                                ))}
+                                <p className="text-center text-[11px] text-[#8E8EA0] pt-2">
+                                    <span className="spinner inline-block w-3 h-3 border-2 border-[#FF375F]/30 border-t-[#FF375F] rounded-full mr-2" />
+                                    Gemini está personalizando tus consejos...
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {recommendations.map((rec, i) => (
+                                    <div key={i}
+                                        className="flex items-start gap-3 p-3.5 rounded-xl border border-[#2E2E3A] bg-[#1C1C22] animate-fade-up"
+                                        style={{ animationDelay: `${i * 80}ms` }}>
+                                        <span className="text-base shrink-0">{rec.match(/^\S+/)?.[0] ?? '💡'}</span>
+                                        <p className="text-xs text-[#C8C8D0] leading-relaxed">
+                                            {rec.replace(/^\S+\s?/, '')}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {error && (
+                            <p className="text-red-400 text-xs font-semibold">{error}</p>
+                        )}
+
+                        <NextButton onClick={handleCreate} loading={loading}>
+                            <CheckIcon size={18} /> Crear mi cuenta
+                        </NextButton>
+                        <button onClick={() => setStep(2)}
+                            className="w-full py-2 text-[#8E8EA0] text-sm font-semibold hover:text-white transition-colors">
+                            ← Editar metas
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    )
+}

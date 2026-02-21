@@ -12,9 +12,10 @@ const Svg = ({ size = 24, className = '', children, ...props }) => (
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
-        strokeWidth={2.2}
+        strokeWidth={2}
         strokeLinecap="round"
         strokeLinejoin="round"
+        shapeRendering="geometricPrecision"
         className={className}
         {...props}
     >

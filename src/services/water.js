@@ -47,7 +47,7 @@ function showWaterNotif(current, goal) {
     const n = new Notification('💧 Hora de tomar agua', {
         body: messages[Math.floor(Math.random() * messages.length)],
         tag: 'water-reminder',
-        icon: '/icon-192.png',
+        icon: '/favicon.png',
     })
     setTimeout(() => n.close(), 8000)
     n.onclick = () => { window.focus(); n.close() }

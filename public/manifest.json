@@ -1,26 +1,25 @@
 {
-    "name": "KCal",
-    "short_name": "KCal",
-    "description": "Contador de calorías y macros con IA",
+    "name": "K-Cal — Control de Calorías",
+    "short_name": "K-Cal",
+    "description": "Tu asistente inteligente de calorías, agua y ayuno intermitente con IA",
     "start_url": "/",
     "display": "standalone",
-    "background_color": "#0B0C10",
-    "theme_color": "#0B0C10",
+    "background_color": "#0D0D11",
+    "theme_color": "#FF375F",
     "orientation": "portrait",
     "icons": [
         {
-            "src": "/icon-192.png",
-            "sizes": "192x192",
-            "type": "image/png"
-        },
-        {
-            "src": "/icon-512.png",
-            "sizes": "512x512",
-            "type": "image/png"
+            "src": "/favicon.png",
+            "sizes": "any",
+            "type": "image/png",
+            "purpose": "any maskable"
         }
     ],
     "categories": [
         "health",
-        "fitness"
-    ]
+        "fitness",
+        "food"
+    ],
+    "lang": "es",
+    "dir": "ltr"
 }
