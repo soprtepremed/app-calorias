@@ -135,27 +135,69 @@ body {
   letter-spacing: -0.02em;
 }
 
-/* ── Water Glasses ────────────────────────────────────────────────────── */
+/* ── Water Tracker — Vaso grande único ────────────────────────────────── */
 
-/*
- * Bounce suave al hacer tap en el vasito.
- * cubic-bezier con overshoot → sensación de goma, no de corte.
- */
-@keyframes glass-pop {
+/* Transición suave del nivel de agua */
+.water-fill-rect {
+  transition: y 0.7s cubic-bezier(0.34, 1.2, 0.64, 1),
+    height 0.7s cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+
+/* Onda sutil oscilante */
+@keyframes water-wave {
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  50% {
+    transform: translateX(3px);
+  }
+}
+
+.water-wave-anim {
+  animation: water-wave 3s ease-in-out infinite;
+}
+
+/* Burbujas subiendo */
+@keyframes bubble-up {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scale(1);
+  }
+
+  30% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.5);
+  }
+}
+
+.water-bubble-up {
+  animation: bubble-up 0.6s ease-out forwards;
+}
+
+.water-bubble-up-delayed {
+  animation: bubble-up 0.6s ease-out 0.15s forwards;
+  opacity: 0;
+}
+
+/* Pulse al hacer tap en el vaso */
+@keyframes water-pulse {
   0% {
     transform: scale(1);
   }
 
-  35% {
-    transform: scale(1.22);
+  30% {
+    transform: scale(1.06);
   }
 
-  65% {
-    transform: scale(0.96);
-  }
-
-  85% {
-    transform: scale(1.05);
+  60% {
+    transform: scale(0.97);
   }
 
   100% {
@@ -163,33 +205,6 @@ body {
   }
 }
 
-/*
- * Glow que aparece y desaparece suavemente al llenar el vaso.
- */
-@keyframes glass-glow {
-  0% {
-    filter: drop-shadow(0 0 0px rgba(90, 200, 250, 0));
-  }
-
-  40% {
-    filter: drop-shadow(0 0 6px rgba(90, 200, 250, 0.7));
-  }
-
-  100% {
-    filter: drop-shadow(0 0 3px rgba(90, 200, 250, 0.25));
-  }
-}
-
-/* Clase que se activa al hacer click (añadida/quitada con JS de clase, no state) */
-.glass-tap {
-  animation: glass-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-}
-
-.glass-filled {
-  animation: glass-glow 0.5s ease-out forwards;
-}
-
-/* El agua dentro del SVG sube suavemente */
-.water-rect {
-  transition: y 0.4s cubic-bezier(0.34, 1.2, 0.64, 1);
+.water-pulse {
+  animation: water-pulse 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }

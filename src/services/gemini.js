@@ -101,13 +101,36 @@ async function callGemini(parts, maxTokens = 1024, _retry = false) {
 
         const data = await res.json()
         const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-        const clean = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+        console.log('[Gemini raw]', raw.slice(0, 300))
+
+        // Limpiar markdown code fences
+        let clean = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+
+        // Intento 1: parsear directamente
         try {
             return JSON.parse(clean)
-        } catch {
-            console.error('Gemini devolvió JSON inválido:', clean.slice(0, 200))
-            return { items: [] } // Fallback seguro en vez de crash
+        } catch { /* intentar extracción */ }
+
+        // Intento 2: extraer el primer bloque JSON {...} del texto
+        const jsonMatch = raw.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+            try {
+                const parsed = JSON.parse(jsonMatch[0])
+                console.log('[Gemini parsed]', parsed)
+                return parsed
+            } catch { /* falló también */ }
         }
+
+        // Intento 3: extraer array JSON [{...}]
+        const arrMatch = raw.match(/\[[\s\S]*\]/)
+        if (arrMatch) {
+            try {
+                return { items: JSON.parse(arrMatch[0]) }
+            } catch { /* falló */ }
+        }
+
+        console.error('Gemini devolvió JSON inválido:', clean.slice(0, 300))
+        return { items: [] } // Fallback seguro en vez de crash
     }
 
     throw new Error('Todos los modelos de IA están temporalmente no disponibles')
@@ -196,14 +219,31 @@ Devuelve ÚNICAMENTE JSON válido (sin markdown):
 }
 Usa datos USDA. Redondea a 1 decimal.`
 
-    const parsed = await callGemini([{ text: prompt }], 256)
-    return {
+    // maxOutputTokens: 1024 (Gemini 2.5-flash usa pensamiento interno
+    // que consume tokens — con 256 el JSON se truncaba)
+    const parsed = await callGemini([{ text: prompt }], 1024)
+
+    // Validar que Gemini devolvió datos nutricionales reales
+    if (parsed.calories == null && parsed.items !== undefined) {
+        // callGemini cayó al fallback { items: [] } — no es un resultado de texto válido
+        throw new Error('Gemini no devolvió datos nutricionales válidos')
+    }
+
+    const result = {
         calories: clampNutrient(parsed.calories, MAX_CALORIES),
         protein_g: clampNutrient(parsed.protein_g, MAX_MACRO_G),
         carbs_g: clampNutrient(parsed.carbs_g, MAX_MACRO_G),
         fat_g: clampNutrient(parsed.fat_g, MAX_MACRO_G),
         emoji: parsed.emoji ?? '🍽️',
     }
+
+    // Si TODO es 0, algo salió mal — no hay alimento con 0 calorías en todo
+    if (result.calories === 0 && result.protein_g === 0 && result.carbs_g === 0 && result.fat_g === 0) {
+        console.error('Gemini devolvió todo en 0:', parsed)
+        throw new Error('No se pudieron calcular los macros — intenta describir mejor el alimento')
+    }
+
+    return result
 }
 
 // ══════════════════════════════════════════════════════════════════════════
