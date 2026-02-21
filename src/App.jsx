@@ -128,10 +128,9 @@ function DesktopHeader({ page }) {
 // APP PRINCIPAL
 // ════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  // ── Estado de sesión: undefined = cargando, null = sin sesión, object = autenticado
-  // NO leemos localStorage manualmente (era frágil y dependía del formato interno de Supabase).
-  // Dejamos que onAuthStateChange → INITIAL_SESSION nos diga si hay sesión o no.
-  const [session, setSession] = useState(undefined)
+  // Con persistSession:false, al refrescar/cerrar siempre pide login.
+  // La sesión solo existe mientras la app está abierta.
+  const [session, setSession] = useState(null)
   const [page, setPage] = useState('dashboard')
   const [config, setConfig] = useState(null)
   const [configId, setConfigId] = useState(null)
@@ -151,13 +150,6 @@ export default function App() {
   // ── Inicializar offline sync al arrancar ─────────────────────────────────
   useEffect(() => {
     initOfflineSync()
-
-    // Timeout de seguridad: si INITIAL_SESSION nunca dispara (red caída, etc.),
-    // forzar session=null para no quedarse en spinner infinito
-    const safetyTimer = setTimeout(() => {
-      setSession(prev => prev === undefined ? null : prev)
-    }, 4000)
-    return () => clearTimeout(safetyTimer)
   }, [])
 
   // ── Navegación con History API (gesto atrás en iOS/Android) ─────────────
@@ -181,76 +173,26 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePop)
   }, [])
 
-  // ── Verificar sesión + escuchar cambios ─────────────────────────────────
-  // La sesión ya se leyó de localStorage arriba (instantánea).
-  // Solo reaccionamos a SIGNED_IN / SIGNED_OUT, NO a TOKEN_REFRESHED.
-  const currentUserRef = useRef(session?.user?.id ?? null)
-
+  // ── Escuchar cambios de sesión: solo SIGNED_IN y SIGNED_OUT ──────────
   useEffect(() => {
-    let cancelled = false
-    let configLoaded = false
-
-    const loadConfig = async () => {
-      if (configLoaded) return // No recargar si ya tenemos config
-      try {
-        const cfg = await getConfig()
-        if (!cancelled) {
+    const unsub = onAuthChange(async (sess, event) => {
+      if (event === 'SIGNED_IN' && sess) {
+        setSession(sess)
+        // Cargar config del usuario
+        try {
+          const cfg = await getConfig()
           setConfig(cfg)
           setConfigId(cfg?.id)
-          configLoaded = true
+        } catch (e) {
+          console.error('Error cargando config:', e)
         }
-      } catch (e) {
-        console.error('Error cargando config:', e)
-      }
-    }
-
-    // Si ya tenemos sesión de localStorage, cargar config inmediatamente
-    if (session?.user) {
-      loadConfig()
-    }
-
-    // Listener para cambios REALES (login/logout), NO refreshes de token
-    const unsub = onAuthChange(async (sess, event) => {
-      if (cancelled) return
-
-      // En TOKEN_REFRESHED solo actualizar ref de sesión silenciosamente
-      if (event === 'TOKEN_REFRESHED') {
-        if (sess) setSession(sess)
-        return
-      }
-
-      // INITIAL_SESSION: al recargar la página, Supabase confirma la sesión
-      // Necesitamos cargar config si aún no la tenemos
-      if (event === 'INITIAL_SESSION') {
-        setSession(sess ?? null) // SIEMPRE actualizar: sess o null (→ login)
-        if (sess) {
-          currentUserRef.current = sess.user?.id ?? null
-          if (!configLoaded) await loadConfig()
-        }
-        return
-      }
-
-      const newUserId = sess?.user?.id ?? null
-      const prevUserId = currentUserRef.current
-      currentUserRef.current = newUserId
-
-      setSession(sess ?? null)
-
-      if (sess && event === 'SIGNED_IN') {
-        // Solo cargar config si es un usuario DIFERENTE o no la tenemos
-        if (newUserId !== prevUserId || !configLoaded) {
-          configLoaded = false
-          await loadConfig()
-        }
-
-        // Sincronizar cola offline al autenticarse
+        // Sincronizar cola offline
         if (hasPending()) {
           flushQueue().then(n => {
             if (n > 0) showToast(`☁️ ${n} dato(s) sincronizado(s)`)
           })
         }
-
-        // Iniciar recordatorios de agua con getter REAL de vasos
+        // Recordatorios de agua
         requestNotificationPermission().then(granted => {
           if (granted) startWaterReminder(
             config?.water_reminder_hours ?? 2,
@@ -258,49 +200,30 @@ export default function App() {
             () => glassesRef.current
           )
         })
-      } else if (!sess) {
-        // SIGNED_OUT
-        configLoaded = false
+      } else if (event === 'SIGNED_OUT' || !sess) {
+        setSession(null)
         setConfig(null)
         setConfigId(null)
         stopWaterReminder?.()
       }
     })
-
-    return () => {
-      cancelled = true
-      unsub()
-    }
+    return () => unsub()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
 
   const handleSignOut = async () => {
-    // 1. Limpiar estado local INMEDIATAMENTE — la UI siempre responde
     setSession(null)
     setConfig(null)
     setConfigId(null)
     setPage('dashboard')
     stopWaterReminder?.()
-
-    // 2. Borrar localStorage de Supabase manualmente (por si la red falla)
-    try {
-      Object.keys(localStorage)
-        .filter(k => k.startsWith('sb-'))
-        .forEach(k => localStorage.removeItem(k))
-    } catch { /* silencioso */ }
-
-    // 3. Notificar a Supabase en segundo plano (no bloqueante)
-    signOut().catch(() => { /* ignora errores de red */ })
-
+    signOut().catch(() => { })
     showToast('Sesión cerrada')
   }
 
 
-  // ── Estados de carga ────────────────────────────────────────────────────
-  // undefined = esperando confirmación de Supabase → mostrar loading
-  if (session === undefined) return <LoadingScreen />
-  // null = Supabase confirmó que NO hay sesión → mostrar login
-  if (session === null) return <Auth />
+  // ── Sin sesión → Login (siempre al refrescar/abrir) ───────────────────
+  if (!session) return <Auth />
 
   // ── Contenido por página ────────────────────────────────────────────────
   const PageContent = () => {

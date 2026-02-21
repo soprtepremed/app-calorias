@@ -258,19 +258,10 @@ export default function Dashboard({ config, showToast, onGlassesChange }) {
     )
 
     // ── Función para obtener datos de Supabase ──────────────────────
+    // Con persistSession:false, Dashboard solo se renderiza después del login
+    // → JWT siempre está listo, no necesitamos retry
     const loadData = useCallback(async () => {
         try {
-            // Forzar espera de JWT: al refrescar, el SDK tarda ~200-500ms
-            // en rehidratar desde localStorage. Reintentamos hasta tener sesión.
-            let session = null
-            for (let i = 0; i < 5; i++) {
-                const { data } = await supabase.auth.getSession()
-                session = data?.session
-                if (session) break
-                await new Promise(r => setTimeout(r, 400)) // esperar 400ms
-            }
-            if (!session) { setLoading(false); return } // sin sesión → login
-
             const [f, w] = await Promise.all([getFoodByDate(today), getWaterByDate(today)])
             setFoods(f ?? [])
             const g = w?.glasses ?? 0
