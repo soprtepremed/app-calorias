@@ -4,14 +4,17 @@
  * Flujo MANUAL:
  *   1. Usuario describe la comida y pone cantidad/unidad
  *   2. Gemini calcula calorías y macros
- *   3. Se muestra un modal de CONFIRMACIÓN con resumen visual
+ *   3. Se muestra ConfirmStep con resumen visual
  *   4. Solo al confirmar se guarda
  *
  * Flujo FOTO IA:
  *   1. Usuario toma/sube foto
  *   2. Gemini detecta ingredientes y pre-llena datos
- *   3. Se le pide al usuario la PORCIÓN real
- *   4. Modal de confirmación → guardar
+ *   3. Se le pide al usuario la PORCIÓN real (ConfirmStep)
+ *   4. Confirmar → guardar
+ *
+ * Módulos extraídos:
+ *   ConfirmStep.jsx — Pantalla de confirmación con macros
  *
  * Props:
  *   open          — boolean
@@ -26,8 +29,9 @@ import { uploadFoodPhoto } from '../services/supabase'
 import { Modal, PrimaryButton, OutlineButton, Spinner } from './UI'
 import {
     SunIcon, UtensilsIcon, MoonIcon, AppleIcon,
-    PencilIcon, CameraIcon, CheckIcon, SparkIcon,
+    PencilIcon, CameraIcon, SparkIcon,
 } from './Icons'
+import ConfirmStep from './ConfirmStep'
 
 // ── Configuración de tipos de comida con emojis ──────────────────────
 const MEALS = [
@@ -509,120 +513,25 @@ export default function AddFoodModal({ open, onClose, onSave, showToast, onOpenS
                 </>
             )}
 
-            {/* ── PASO 2: CONFIRMACIÓN ───────────────────────────────── */}
+            {/* ── PASO 2: CONFIRMACIÓN (delegada a ConfirmStep) ────── */}
             {step === STEP_CONFIRM && (
-                <div className="space-y-4 animate-fade-up">
-                    {/* Header con tipo de comida */}
-                    <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xl">{activeMeal.emoji}</span>
-                        <span className="text-xs font-bold uppercase tracking-widest" style={{ color: activeMeal.color }}>
-                            {activeMeal.label}
-                        </span>
-                    </div>
-
-                    {/* Card de resumen */}
-                    <div className="rounded-2xl p-5 relative overflow-hidden"
-                        style={{
-                            background: 'linear-gradient(135deg, rgba(255,55,95,0.12), rgba(255,107,26,0.06))',
-                            border: '1px solid rgba(255,55,95,0.2)',
-                        }}>
-                        {/* Glow de fondo */}
-                        <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full opacity-20 pointer-events-none"
-                            style={{ background: 'radial-gradient(circle,#FF375F,transparent)' }} />
-
-                        {/* Nombre del alimento */}
-                        <p className="text-white font-bold text-base mb-1">
-                            {tab === 'photo' && editingItem ? editingItem.food_name : name}
-                        </p>
-
-                        {/* Porción - editable en modo foto */}
-                        {tab === 'photo' && editingItem ? (
-                            <div className="mb-4">
-                                <p className="text-[10px] text-[#8E8EA0] mb-2">
-                                    La IA estimó {editingItem.originalQty}{editingItem.unit}. ¿Cuánto comiste realmente?
-                                </p>
-                                <div className="flex gap-3 items-center">
-                                    <input
-                                        type="number"
-                                        inputMode="numeric"
-                                        value={editingItem.quantity}
-                                        onChange={e => updateEditingQty(e.target.value)}
-                                        className="w-24 px-3 py-2 rounded-xl text-white text-sm font-bold text-center focus:outline-none"
-                                        style={{
-                                            background: 'rgba(255,255,255,0.08)',
-                                            border: '1.5px solid rgba(255,55,95,0.3)',
-                                        }}
-                                    />
-                                    <span className="text-sm text-[#8E8EA0] font-semibold">
-                                        {editingItem.unit}
-                                    </span>
-                                </div>
-                            </div>
-                        ) : (
-                            <p className="text-[11px] text-[#8E8EA0] mb-4">
-                                {aiExplanation || `${qty} ${unit}`}
-                            </p>
-                        )}
-
-                        {/* Calorías HERO */}
-                        <p className="text-[9px] font-black text-[#8E8EA0] uppercase tracking-widest mb-1">
-                            Calorías estimadas
-                        </p>
-                        <div className="flex items-end gap-2 mb-4">
-                            <span className="text-5xl font-black num leading-none"
-                                style={{ color: '#FF375F', textShadow: '0 0 30px rgba(255,55,95,0.5)' }}>
-                                {Math.round(Number(tab === 'photo' && editingItem ? editingItem.calories : kcal))}
-                            </span>
-                            <span className="text-base text-[#8E8EA0] mb-1.5 font-semibold">kcal</span>
-                        </div>
-
-                        {/* Macros como chips */}
-                        <div className="flex gap-2 flex-wrap">
-                            {[
-                                {
-                                    label: 'Proteína',
-                                    val: tab === 'photo' && editingItem ? editingItem.protein_g : protein,
-                                    color: '#0A84FF'
-                                },
-                                {
-                                    label: 'Carbos',
-                                    val: tab === 'photo' && editingItem ? editingItem.carbs_g : carbs,
-                                    color: '#FF9F0A'
-                                },
-                                {
-                                    label: 'Grasas',
-                                    val: tab === 'photo' && editingItem ? editingItem.fat_g : fat,
-                                    color: '#BF5AF2'
-                                },
-                            ].map(m => (
-                                <div key={m.label}
-                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
-                                    style={{ background: `${m.color}15`, border: `1px solid ${m.color}30` }}>
-                                    <span className="text-[10px] text-[#8E8EA0] font-semibold">{m.label}</span>
-                                    <span className="text-[11px] font-black num" style={{ color: m.color }}>
-                                        {Math.round(Number(m.val) * 10) / 10}g
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Botones de acción */}
-                    <div className="flex gap-3 pt-1">
-                        <OutlineButton onClick={() => {
-                            setStep(STEP_INPUT)
-                            setEditingItem(null)
-                        }}>
-                            ← Volver
-                        </OutlineButton>
-                        <PrimaryButton
-                            onClick={tab === 'photo' ? confirmPhotoItem : confirmManual}
-                            loading={loading}
-                        >
-                            <CheckIcon size={16} /> Confirmar y Guardar
-                        </PrimaryButton>
-                    </div>
-                </div>
+                <ConfirmStep
+                    tab={tab}
+                    activeMeal={activeMeal}
+                    name={name}
+                    qty={qty}
+                    unit={unit}
+                    kcal={kcal}
+                    protein={protein}
+                    carbs={carbs}
+                    fat={fat}
+                    aiExplanation={aiExplanation}
+                    editingItem={editingItem}
+                    onUpdateQty={updateEditingQty}
+                    onBack={() => { setStep(STEP_INPUT); setEditingItem(null) }}
+                    onConfirm={tab === 'photo' ? confirmPhotoItem : confirmManual}
+                    loading={loading}
+                />
             )}
         </Modal>
     )

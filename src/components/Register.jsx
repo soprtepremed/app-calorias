@@ -1,106 +1,22 @@
+/**
+ * Register.jsx — Wizard de registro de 4 pasos.
+ *
+ * Módulos extraídos:
+ *   RegisterHelpers.js — Funciones de cálculo (BMI, TDEE, metas)
+ *   RegisterUI.jsx     — Sub-componentes de UI (StepIndicator, FieldLabel, etc.)
+ *
+ * Pasos:
+ *   0. Datos personales + credenciales
+ *   1. Perfil físico (peso, talla, edad, sexo)
+ *   2. Metas y nivel de actividad
+ *   3. Recomendaciones IA + crear cuenta
+ */
 import { useState, useEffect } from 'react'
 import { signUp, updateConfig, getConfig } from '../services/supabase'
 import { generateOnboardingRecommendations } from '../services/gemini'
 import { FlameIcon, SparkIcon, DropIcon, ScaleIcon, CheckIcon } from './Icons'
-
-// ── Helpers de cálculo ──────────────────────────────────────────────────────
-
-/** Índice de Masa Corporal */
-function calcBMI(weightKg, heightCm) {
-    const h = heightCm / 100
-    return parseFloat((weightKg / (h * h)).toFixed(1))
-}
-
-/** Categoría IMC */
-function bmiCategory(bmi) {
-    if (bmi < 18.5) return { label: 'Bajo peso', color: '#0A84FF', emoji: '📉' }
-    if (bmi < 25) return { label: 'Normal', color: '#30D158', emoji: '✅' }
-    if (bmi < 30) return { label: 'Sobrepeso', color: '#FF9F0A', emoji: '⚠️' }
-    return { label: 'Obesidad', color: '#FF375F', emoji: '🔴' }
-}
-
-/**
- * TDEE con Harris-Benedict * factor de actividad.
- * Redondea a 50 kcal más cercanas.
- */
-function calcTDEE(weightKg, heightCm, age, sex, activity) {
-    let bmr
-    if (sex === 'M') {
-        bmr = 88.362 + (13.397 * weightKg) + (4.799 * heightCm) - (5.677 * age)
-    } else {
-        bmr = 447.593 + (9.247 * weightKg) + (3.098 * heightCm) - (4.330 * age)
-    }
-    const factors = { sedentario: 1.2, ligero: 1.375, moderado: 1.55, activo: 1.725, muy_activo: 1.9 }
-    const tdee = bmr * (factors[activity] ?? 1.55)
-    return Math.round(tdee / 50) * 50
-}
-
-/** Agua recomendada: 35ml por kg → vasos de 250ml */
-function calcWaterGoal(weightKg) {
-    return Math.max(6, Math.min(12, Math.round((weightKg * 35) / 250)))
-}
-
-/** Proteína recomendada: 1.6g/kg para actividad moderada */
-function calcProteinGoal(weightKg, activity) {
-    const factor = { sedentario: 1.0, ligero: 1.3, moderado: 1.6, activo: 1.8, muy_activo: 2.0 }
-    return Math.round(weightKg * (factor[activity] ?? 1.6))
-}
-
-// ── Sub-componentes ─────────────────────────────────────────────────────────
-
-function StepIndicator({ step, total }) {
-    return (
-        <div className="flex items-center gap-1.5 mb-8">
-            {Array.from({ length: total }).map((_, i) => (
-                <div key={i} className={`h-1.5 rounded-full transition-all duration-500
-                    ${i < step ? 'bg-[#FF375F]' : i === step ? 'bg-[#FF375F]/60' : 'bg-[#2E2E3A]'}
-                    ${i === step ? 'flex-[2]' : 'flex-1'}`}
-                />
-            ))}
-            <span className="text-[9px] font-black text-[#8E8EA0] ml-2 whitespace-nowrap">
-                {step + 1} / {total}
-            </span>
-        </div>
-    )
-}
-
-function FieldLabel({ children }) {
-    return (
-        <label className="text-[10px] font-black text-[#8E8EA0] uppercase tracking-widest block mb-2">
-            {children}
-        </label>
-    )
-}
-
-function TextInput({ id, type = 'text', value, onChange, placeholder, autoComplete, className = '' }) {
-    return (
-        <input id={id} type={type} value={value} onChange={onChange}
-            placeholder={placeholder} autoComplete={autoComplete}
-            className={`w-full px-4 py-3 bg-[#252530] border border-[#2E2E3A] rounded-xl
-                text-white placeholder-[#8E8EA0] focus:outline-none
-                focus:border-[#FF375F]/60 focus:ring-2 focus:ring-[#FF375F]/10
-                transition-all text-sm ${className}`}
-        />
-    )
-}
-
-function NextButton({ onClick, disabled, loading, children }) {
-    return (
-        <button onClick={onClick} disabled={disabled || loading}
-            className="w-full py-4 rounded-2xl font-black text-white text-sm
-                       disabled:opacity-40 disabled:cursor-not-allowed
-                       active:scale-95 transition-all flex items-center justify-center gap-3 mt-5"
-            style={{
-                background: 'linear-gradient(135deg,#FF375F,#FF6B1A)',
-                boxShadow: '0 4px 20px rgba(255,55,95,0.4)',
-            }}>
-            {loading
-                ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full spinner" />
-                : children
-            }
-        </button>
-    )
-}
+import { calcBMI, bmiCategory, calcTDEE, calcWaterGoal, calcProteinGoal, ACTIVITY_OPTIONS } from './RegisterHelpers'
+import { StepIndicator, FieldLabel, TextInput, NextButton } from './RegisterUI'
 
 // ════════════════════════════════════════════════════════════════════════════
 // REGISTER WIZARD — 4 pasos
@@ -257,14 +173,6 @@ export default function Register({ onBack }) {
             setLoading(false)
         }
     }
-
-    const ACTIVITY_OPTIONS = [
-        { key: 'sedentario', label: 'Sedentario', sub: 'Sin ejercicio', emoji: '🛋️' },
-        { key: 'ligero', label: 'Ligero', sub: '1-2 días/semana', emoji: '🚶' },
-        { key: 'moderado', label: 'Moderado', sub: '3-5 días/semana', emoji: '🏃' },
-        { key: 'activo', label: 'Activo', sub: '6-7 días/semana', emoji: '💪' },
-        { key: 'muy_activo', label: 'Muy activo', sub: 'Ejercicio intenso diario', emoji: '🏋️' },
-    ]
 
     // ─────────────────────────────────────────────────────────────────────────
     return (
