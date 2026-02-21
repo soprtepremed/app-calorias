@@ -318,13 +318,13 @@ export default function App() {
     <div className="min-h-dvh bg-[#0D0D11] text-white">
 
       {/* Layout dual — sidebar en md+, nav inferior en móvil */}
-      <div className="md:flex h-dvh overflow-hidden">
+      <div className="md:flex md:h-dvh md:overflow-hidden">
 
         {/* Sidebar escritorio */}
         <DesktopSidebar page={page} setPage={setPageWithHistory} config={config} onSignOut={handleSignOut} />
 
         {/* Columna principal */}
-        <div className="flex-1 flex flex-col min-h-dvh md:min-h-0 md:overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-dvh md:min-h-0 md:overflow-y-auto">
 
           {/* Header escritorio */}
           <DesktopHeader page={page} />
