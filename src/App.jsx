@@ -324,7 +324,7 @@ export default function App() {
         <DesktopSidebar page={page} setPage={setPageWithHistory} config={config} onSignOut={handleSignOut} />
 
         {/* Columna principal */}
-        <div className="flex-1 flex flex-col min-h-dvh md:min-h-0 md:overflow-y-auto">
+        <div className="flex-1 flex flex-col md:min-h-0 md:overflow-y-auto">
 
           {/* Header escritorio */}
           <DesktopHeader page={page} />
@@ -359,7 +359,7 @@ export default function App() {
           </header>
 
           {/* Scroll area */}
-          <main className="flex-1 overflow-y-auto px-4 pt-4 pb-28 md:px-8 md:pt-6 md:pb-8 md:max-w-2xl md:w-full md:mx-auto">
+          <main className="flex-1 px-4 pt-4 pb-28 md:overflow-y-auto md:px-8 md:pt-6 md:pb-8 md:max-w-2xl md:w-full md:mx-auto">
             <PageContent />
           </main>
         </div>
