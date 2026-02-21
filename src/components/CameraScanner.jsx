@@ -147,11 +147,11 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
     if (!open) return null
 
     return (
-        <div className="fixed inset-0 z-40 bg-black flex flex-col">
+        <div className="fixed inset-0 z-40 bg-[#0A0A0A] flex flex-col">
 
-            {/* ── Header ─────────────────────────────────────────────────────── */}
-            <div className="flex items-center justify-between px-4 py-3
-                      bg-black/80 backdrop-blur-sm absolute top-0 left-0 right-0 z-10">
+            {/* ── Header (en flujo, no absolute) ──────────────────────────────── */}
+            <div className="flex items-center justify-between px-4 py-3 shrink-0
+                      bg-[#0A0A0A] border-b border-white/5">
                 <div className="flex items-center gap-2">
                     <SparkIcon size={18} className="text-[#FF6B1A]" />
                     <span className="text-white font-bold text-sm tracking-wide">Escáner IA</span>
@@ -165,138 +165,139 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
                 </button>
             </div>
 
-            {/* ── Viewfinder / Snapshot ───────────────────────────────────────── */}
-            <div className="relative flex-1 overflow-hidden bg-black">
+            {/* ── Viewfinder contenido (no llena toda la pantalla) ─────────────── */}
+            <div className="flex-1 flex items-center justify-center overflow-hidden px-4 py-3">
+                <div className="relative w-full rounded-3xl overflow-hidden bg-black"
+                    style={{ maxHeight: '65vh', aspectRatio: '3/4' }}>
 
-                {/* Video en vivo */}
-                <video
-                    ref={videoRef}
-                    playsInline
-                    muted
-                    className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300
-            ${phase === 'camera' ? 'opacity-100' : 'opacity-0'}`}
-                />
-
-                {/* Canvas oculto para captura */}
-                <canvas ref={canvasRef} className="hidden" />
-
-                {/* Snapshot con overlay */}
-                {snapshot && (
-                    <img
-                        src={snapshot}
-                        alt="captura"
-                        className="absolute inset-0 w-full h-full object-cover"
+                    {/* Video en vivo */}
+                    <video
+                        ref={videoRef}
+                        playsInline
+                        muted
+                        className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300
+                            ${phase === 'camera' ? 'opacity-100' : 'opacity-0'}`}
                     />
-                )}
 
-                {/* ── Chips de alimentos encima de la imagen ────────────────── */}
-                {phase === 'result' && items.map((item, idx) => {
-                    const sel = checked.includes(idx)
-                    return (
-                        <button
-                            key={idx}
-                            onClick={() =>
-                                setChecked(prev =>
-                                    prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
-                                )
-                            }
-                            className="absolute transform -translate-x-1/2 -translate-y-1/2
-                         transition-all duration-300 z-20"
-                            style={{
-                                left: `${Math.min(Math.max(item.cx, 10), 90)}%`,
-                                top: `${Math.min(Math.max(item.cy, 10), 90)}%`,
-                            }}
-                        >
-                            {/* Línea conectora al punto */}
-                            <div className={`
-                flex items-center gap-2 px-3 py-2 rounded-2xl
-                font-bold shadow-2xl select-none
-                transition-all duration-200 animate-fade-up
-                ${sel
-                                    ? 'bg-[#1C1A14]/90 backdrop-blur-md border border-[#FF6B1A]/60 scale-100'
-                                    : 'bg-white/10 backdrop-blur-md border border-white/20 scale-95 opacity-60'
+                    {/* Canvas oculto para captura */}
+                    <canvas ref={canvasRef} className="hidden" />
+
+                    {/* Snapshot con overlay */}
+                    {snapshot && (
+                        <img
+                            src={snapshot}
+                            alt="captura"
+                            className="absolute inset-0 w-full h-full object-cover"
+                        />
+                    )}
+
+                    {/* ── Chips de alimentos encima de la imagen ────────────── */}
+                    {phase === 'result' && items.map((item, idx) => {
+                        const sel = checked.includes(idx)
+                        return (
+                            <button
+                                key={idx}
+                                onClick={() =>
+                                    setChecked(prev =>
+                                        prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+                                    )
                                 }
-              `}
+                                className="absolute transform -translate-x-1/2 -translate-y-1/2
+                                    transition-all duration-300 z-20"
                                 style={{
-                                    animationDelay: `${idx * 80}ms`,
-                                    animationFillMode: 'backwards',
+                                    left: `${Math.min(Math.max(item.cx, 10), 90)}%`,
+                                    top: `${Math.min(Math.max(item.cy, 10), 90)}%`,
                                 }}
                             >
-                                <span className="text-xl leading-none">{item.emoji}</span>
-                                <div className="text-left">
-                                    <p className="text-white text-xs font-black leading-none whitespace-nowrap">
-                                        {item.food_name}
-                                    </p>
-                                    <p className="text-[#FF6B1A] text-xs font-bold leading-tight">
-                                        {Math.round(item.calories)} kcal
-                                    </p>
-                                </div>
-                                {sel && (
-                                    <div className="w-4 h-4 bg-[#FF375F] rounded-full flex items-center justify-center shrink-0">
-                                        <CheckIcon size={10} className="text-white" />
+                                <div className={`
+                                    flex items-center gap-2 px-3 py-2 rounded-2xl
+                                    font-bold shadow-2xl select-none
+                                    transition-all duration-200 animate-fade-up
+                                    ${sel
+                                        ? 'bg-[#1C1A14]/90 backdrop-blur-md border border-[#FF6B1A]/60 scale-100'
+                                        : 'bg-white/10 backdrop-blur-md border border-white/20 scale-95 opacity-60'
+                                    }
+                                `}
+                                    style={{
+                                        animationDelay: `${idx * 80}ms`,
+                                        animationFillMode: 'backwards',
+                                    }}
+                                >
+                                    <span className="text-xl leading-none">{item.emoji}</span>
+                                    <div className="text-left">
+                                        <p className="text-white text-xs font-black leading-none whitespace-nowrap">
+                                            {item.food_name}
+                                        </p>
+                                        <p className="text-[#FF6B1A] text-xs font-bold leading-tight">
+                                            {Math.round(item.calories)} kcal
+                                        </p>
                                     </div>
-                                )}
-                            </div>
-                        </button>
-                    )
-                })}
+                                    {sel && (
+                                        <div className="w-4 h-4 bg-[#FF375F] rounded-full flex items-center justify-center shrink-0">
+                                            <CheckIcon size={10} className="text-white" />
+                                        </div>
+                                    )}
+                                </div>
+                            </button>
+                        )
+                    })}
 
-
-                {/* ── Overlay de análisis ──────────────────────────────────── */}
-                {phase === 'analyzing' && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center
-                          bg-black/60 backdrop-blur-sm z-20">
-                        <div className="flex flex-col items-center gap-4">
-                            {/* Spinner grande */}
-                            <div className="relative w-20 h-20">
-                                <div className="absolute inset-0 border-4 border-[#FF6B1A]/20 rounded-full" />
-                                <div className="absolute inset-0 border-4 border-transparent border-t-[#FF6B1A] rounded-full spinner" />
-                                <div className="absolute inset-4 flex items-center justify-center">
-                                    <SparkIcon size={24} className="text-[#FF6B1A]" />
+                    {/* ── Overlay de análisis ──────────────────────────────── */}
+                    {phase === 'analyzing' && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center
+                              bg-black/60 backdrop-blur-sm z-20">
+                            <div className="flex flex-col items-center gap-4">
+                                {/* Spinner grande */}
+                                <div className="relative w-20 h-20">
+                                    <div className="absolute inset-0 border-4 border-[#FF6B1A]/20 rounded-full" />
+                                    <div className="absolute inset-0 border-4 border-transparent border-t-[#FF6B1A] rounded-full spinner" />
+                                    <div className="absolute inset-4 flex items-center justify-center">
+                                        <SparkIcon size={24} className="text-[#FF6B1A]" />
+                                    </div>
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-white font-black text-lg">Analizando...</p>
+                                    <p className="text-[#7B7D94] text-sm mt-1">Gemini IA detectando alimentos</p>
+                                </div>
+                                {/* Barra de progreso animada */}
+                                <div className="w-48 h-1 bg-white/10 rounded-full overflow-hidden">
+                                    <div className="h-full bg-[#FF6B1A] rounded-full"
+                                        style={{ animation: 'scan 1.5s ease-in-out infinite' }} />
                                 </div>
                             </div>
-                            <div className="text-center">
-                                <p className="text-white font-black text-lg">Analizando...</p>
-                                <p className="text-[#7B7D94] text-sm mt-1">Gemini IA detectando alimentos</p>
-                            </div>
-                            {/* Barra de progreso animada */}
-                            <div className="w-48 h-1 bg-white/10 rounded-full overflow-hidden">
-                                <div className="h-full bg-[#FF6B1A] rounded-full animate-[scan_1.5s_ease-in-out_infinite]"
-                                    style={{ animation: 'scan 1.5s ease-in-out infinite' }} />
-                            </div>
                         </div>
-                    </div>
-                )}
+                    )}
 
-                {/* ── Marco de escaneo (viewfinder) ────────────────────────── */}
-                {phase === 'camera' && (
-                    <>
-                        {/* Esquinas del viewfinder */}
-                        {[
-                            'top-16 left-8',
-                            'top-16 right-8 rotate-90',
-                            'bottom-32 left-8 -rotate-90',
-                            'bottom-32 right-8 rotate-180',
-                        ].map((pos, i) => (
-                            <div key={i} className={`absolute ${pos} w-10 h-10`}>
-                                <div className="absolute top-0 left-0 w-full h-0.5 bg-white rounded-full" />
-                                <div className="absolute top-0 left-0 h-full w-0.5 bg-white rounded-full" />
+                    {/* ── Marco de escaneo (viewfinder) ────────────────────── */}
+                    {phase === 'camera' && (
+                        <>
+                            {/* Esquinas del viewfinder — relativas al contenedor redondeado */}
+                            {[
+                                'top-4 left-4',
+                                'top-4 right-4 rotate-90',
+                                'bottom-4 left-4 -rotate-90',
+                                'bottom-4 right-4 rotate-180',
+                            ].map((pos, i) => (
+                                <div key={i} className={`absolute ${pos} w-8 h-8`}>
+                                    <div className="absolute top-0 left-0 w-full h-0.5 bg-white/80 rounded-full" />
+                                    <div className="absolute top-0 left-0 h-full w-0.5 bg-white/80 rounded-full" />
+                                </div>
+                            ))}
+                            {/* Hint */}
+                            <div className="absolute bottom-6 left-0 right-0 flex justify-center">
+                                <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full">
+                                    <p className="text-white/80 text-xs font-semibold text-center">
+                                        Apunta al plato y toca Escanear
+                                    </p>
+                                </div>
                             </div>
-                        ))}
-                        {/* Hint */}
-                        <div className="absolute bottom-28 left-0 right-0 flex justify-center">
-                            <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full">
-                                <p className="text-white/80 text-xs font-semibold text-center">
-                                    Apunta al plato y toca Escanear
-                                </p>
-                            </div>
-                        </div>
-                    </>
-                )}
+                        </>
+                    )}
+                </div>
             </div>
 
             {/* ── Controles inferiores ────────────────────────────────────────── */}
-            <div className="bg-black/90 backdrop-blur-md px-5 py-5 safe-area-bottom">
+            <div className="bg-[#0A0A0A] border-t border-white/5 px-5 py-4 shrink-0 safe-area-bottom">
 
                 {/* Fase: cámara → botón escanear */}
                 {phase === 'camera' && (
