@@ -7,9 +7,9 @@
  */
 
 const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY
-// Modelo más BARATO primero → fallback al más capaz si falla
-// flash-lite: $0.025/M tokens | flash: $0.10/M tokens (4x más caro)
-const MODELS = ['gemini-2.0-flash-lite', 'gemini-2.0-flash']
+// Modelo primario: gemini-2.5-flash (funciona con Nivel 1 pagado)
+// Fallback: gemini-2.0-flash
+const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash']
 const makeUrl = (model) =>
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`
 
