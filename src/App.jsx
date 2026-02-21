@@ -151,6 +151,13 @@ export default function App() {
   // ── Inicializar offline sync al arrancar ─────────────────────────────────
   useEffect(() => {
     initOfflineSync()
+
+    // Timeout de seguridad: si INITIAL_SESSION nunca dispara (red caída, etc.),
+    // forzar session=null para no quedarse en spinner infinito
+    const safetyTimer = setTimeout(() => {
+      setSession(prev => prev === undefined ? null : prev)
+    }, 4000)
+    return () => clearTimeout(safetyTimer)
   }, [])
 
   // ── Navegación con History API (gesto atrás en iOS/Android) ─────────────
@@ -215,8 +222,8 @@ export default function App() {
       // INITIAL_SESSION: al recargar la página, Supabase confirma la sesión
       // Necesitamos cargar config si aún no la tenemos
       if (event === 'INITIAL_SESSION') {
+        setSession(sess ?? null) // SIEMPRE actualizar: sess o null (→ login)
         if (sess) {
-          setSession(sess)
           currentUserRef.current = sess.user?.id ?? null
           if (!configLoaded) await loadConfig()
         }
