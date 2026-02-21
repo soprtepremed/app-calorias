@@ -3,27 +3,31 @@
  *
  * Muestra:
  * - Miniatura del snapshot capturado
+ * - Campo de cantidad total (el usuario ingresa los gramos totales)
  * - Resumen de macros totales de los seleccionados
  * - Lista de alimentos con checkbox para seleccionar/deseleccionar
  * - Botones "Repetir" y "Confirmar"
  *
  * Props:
- *   snapshot     — dataURL del frame capturado
- *   items        — array de alimentos detectados
- *   checked      — array de índices seleccionados
- *   onToggle     — (idx) => void
- *   onSave       — () => void
- *   onRestart    — () => void
- *   onClose      — () => void
- *   rootStyle    — estilos inline del contenedor raíz
- *   headerStyle  — estilos inline del header
- *   bottomStyle  — estilos inline del footer
+ *   snapshot      — dataURL del frame capturado
+ *   items         — array de alimentos detectados
+ *   checked       — array de índices seleccionados
+ *   totalQty      — string con la cantidad total ingresada
+ *   onTotalQtyChange — (value: string) => void
+ *   onToggle      — (idx) => void
+ *   onSave        — () => void
+ *   onRestart     — () => void
+ *   onClose       — () => void
+ *   rootStyle     — estilos inline del contenedor raíz
+ *   headerStyle   — estilos inline del header
+ *   bottomStyle   — estilos inline del footer
  */
 import { CheckIcon, XIcon } from './Icons'
 import { PrimaryButton, OutlineButton } from './UI'
 
 export default function ScanReview({
-    snapshot, items, checked, onToggle, onSave, onRestart, onClose,
+    snapshot, items, checked, totalQty, onTotalQtyChange,
+    onToggle, onSave, onRestart, onClose,
     rootStyle, headerStyle, bottomStyle,
 }) {
     // Totales de macros de los seleccionados
@@ -86,6 +90,57 @@ export default function ScanReview({
                         </div>
                     </div>
                 )}
+
+                {/* Campo de cantidad total */}
+                <div style={{ padding: '12px 16px 0' }}>
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        background: 'rgba(255,255,255,0.04)',
+                        border: '1.5px solid rgba(255,255,255,0.1)',
+                        borderRadius: 14,
+                        padding: '10px 14px',
+                    }}>
+                        <span style={{ fontSize: 18 }}>⚖️</span>
+                        <div style={{ flex: 1 }}>
+                            <label style={{
+                                fontSize: 9,
+                                fontWeight: 800,
+                                color: '#8E8EA0',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.1em',
+                            }}>
+                                Cantidad total
+                            </label>
+                            <input
+                                type="number"
+                                inputMode="numeric"
+                                placeholder="Ej: 300"
+                                value={totalQty}
+                                onChange={e => onTotalQtyChange(e.target.value)}
+                                style={{
+                                    display: 'block',
+                                    width: '100%',
+                                    background: 'transparent',
+                                    border: 'none',
+                                    outline: 'none',
+                                    color: '#fff',
+                                    fontSize: 18,
+                                    fontWeight: 900,
+                                    padding: '2px 0 0',
+                                }}
+                            />
+                        </div>
+                        <span style={{
+                            color: '#8E8EA0',
+                            fontSize: 14,
+                            fontWeight: 700,
+                        }}>
+                            gramos
+                        </span>
+                    </div>
+                </div>
 
                 {/* Resumen de macros */}
                 <div style={{ padding: '12px 16px' }}>
@@ -170,7 +225,7 @@ export default function ScanReview({
                                         {item.emoji}
                                     </div>
 
-                                    {/* Info del alimento */}
+                                    {/* Info del alimento — sin cantidad (el total es global) */}
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <p style={{
                                             color: '#fff',
@@ -189,8 +244,6 @@ export default function ScanReview({
                                             fontSize: 11,
                                             fontWeight: 600,
                                         }}>
-                                            {item.quantity} {item.unit}
-                                            {' · '}
                                             <span style={{ color: '#0A84FF' }}>P:{Math.round(item.protein_g)}g</span>
                                             {' '}
                                             <span style={{ color: '#FF9F0A' }}>C:{Math.round(item.carbs_g)}g</span>
@@ -199,7 +252,7 @@ export default function ScanReview({
                                         </p>
                                     </div>
 
-                                    {/* Calorías + check */}
+                                    {/* Calorías */}
                                     <div style={{
                                         display: 'flex',
                                         flexDirection: 'column',

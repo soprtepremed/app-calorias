@@ -35,6 +35,10 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
     const [items, setItems] = useState([])              // alimentos detectados
     const [checked, setChecked] = useState([])          // índices seleccionados
     const [scanning, setScanning] = useState(false)     // guard contra doble-tap
+    const [totalQty, setTotalQty] = useState('')        // cantidad total en gramos (usuario)
+    const [progress, setProgress] = useState(0)         // 0-100 para barra de progreso
+    const cancelledRef = useRef(false)                  // para abortar análisis
+    const progressRef = useRef(null)                    // timer de progreso
 
     // ── Flash y Focus ────────────────────────────────────────────────────────
     const [flashOn, setFlashOn] = useState(false)
@@ -192,9 +196,27 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
         stopCamera()
         setPhase('analyzing')
         setScanning(true)
+        cancelledRef.current = false
+        setProgress(0)
+
+        // Barra de progreso simulada: sube gradualmente hasta 90%
+        // (el 100% se pone al recibir respuesta)
+        let prog = 0
+        progressRef.current = setInterval(() => {
+            prog += Math.random() * 8 + 2  // incremento aleatorio 2-10%
+            if (prog > 90) prog = 90
+            setProgress(Math.round(prog))
+        }, 400)
 
         try {
             const result = await analyzeBase64Frame(base64)
+
+            // Si el usuario canceló mientras esperaba, ignorar resultado
+            if (cancelledRef.current) return
+
+            clearInterval(progressRef.current)
+            setProgress(100)
+
             if (!result.items.length) {
                 showToast('No detecté alimentos — intenta con otro ángulo')
                 restart()
@@ -202,8 +224,10 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
             }
             setItems(result.items)
             setChecked(result.items.map((_, i) => i))
+            setTotalQty('')  // vacío para que el usuario ingrese
             setPhase('review')
         } catch (e) {
+            if (cancelledRef.current) return
             console.error(e)
             const msg = !navigator.onLine
                 ? '📡 Sin conexión — verifica tu internet'
@@ -211,9 +235,20 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
             showToast(msg)
             restart()
         } finally {
+            clearInterval(progressRef.current)
             setScanning(false)
         }
     }, [scanning, flashOn])
+
+    // ── Cancelar análisis en curso ────────────────────────────────────────────
+    const cancelScan = () => {
+        cancelledRef.current = true
+        clearInterval(progressRef.current)
+        setScanning(false)
+        setProgress(0)
+        restart()
+        showToast('Escaneo cancelado')
+    }
 
     // ── Reiniciar (volver a la cámara) ───────────────────────────────────────
     const restart = () => {
@@ -221,6 +256,7 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
         setSnapshot(null)
         setItems([])
         setChecked([])
+        setTotalQty('')
         startCamera()
     }
 
@@ -243,18 +279,25 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
     }
 
     const handleClose = () => {
+        cancelledRef.current = true
+        clearInterval(progressRef.current)
         stopCamera()
         setPhase('camera')
         setSnapshot(null)
         setItems([])
         setChecked([])
+        setTotalQty('')
         setFocusPoint(null)
+        setProgress(0)
         onClose()
     }
 
     // Limpiar timers al desmontar
     useEffect(() => {
-        return () => clearTimeout(focusTimerRef.current)
+        return () => {
+            clearTimeout(focusTimerRef.current)
+            clearInterval(progressRef.current)
+        }
     }, [])
 
     if (!open) return null
@@ -301,6 +344,8 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
                 snapshot={snapshot}
                 items={items}
                 checked={checked}
+                totalQty={totalQty}
+                onTotalQtyChange={setTotalQty}
                 onToggle={toggleItem}
                 onSave={handleSave}
                 onRestart={restart}
@@ -445,7 +490,7 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
                     </div>
                 )}
 
-                {/* Overlay de análisis */}
+                {/* Overlay de análisis — barra de progreso + botón cancelar */}
                 {phase === 'analyzing' && (
                     <div style={{
                         position: 'absolute',
@@ -458,22 +503,66 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
                         backdropFilter: 'blur(4px)',
                         zIndex: 20,
                     }}>
-                        <div className="flex flex-col items-center gap-4">
+                        <div className="flex flex-col items-center gap-5">
+                            {/* Icono central con pulso */}
                             <div className="relative w-20 h-20">
-                                <div className="absolute inset-0 border-4 border-[#FF6B1A]/20 rounded-full" />
-                                <div className="absolute inset-0 border-4 border-transparent border-t-[#FF6B1A] rounded-full spinner" />
+                                <div className="absolute inset-0 rounded-full"
+                                    style={{
+                                        background: 'conic-gradient(#FF6B1A ' + progress + '%, transparent ' + progress + '%)',
+                                        mask: 'radial-gradient(transparent 60%, black 62%)',
+                                        WebkitMask: 'radial-gradient(transparent 60%, black 62%)',
+                                        transition: 'all 0.4s ease',
+                                    }} />
+                                <div className="absolute inset-0 border-4 border-white/5 rounded-full" />
                                 <div className="absolute inset-4 flex items-center justify-center">
                                     <SparkIcon size={24} className="text-[#FF6B1A]" />
                                 </div>
                             </div>
+
+                            {/* Texto + porcentaje */}
                             <div className="text-center">
                                 <p className="text-white font-black text-lg">Analizando...</p>
-                                <p className="text-[#7B7D94] text-sm mt-1">Gemini IA detectando alimentos</p>
+                                <p className="text-[#7B7D94] text-sm mt-1">
+                                    Gemini IA detectando alimentos · {progress}%
+                                </p>
                             </div>
-                            <div className="w-48 h-1 bg-white/10 rounded-full overflow-hidden">
-                                <div className="h-full bg-[#FF6B1A] rounded-full"
-                                    style={{ animation: 'scan 1.5s ease-in-out infinite' }} />
+
+                            {/* Barra de progreso horizontal */}
+                            <div style={{
+                                width: 220,
+                                height: 6,
+                                borderRadius: 3,
+                                background: 'rgba(255,255,255,0.08)',
+                                overflow: 'hidden',
+                            }}>
+                                <div style={{
+                                    height: '100%',
+                                    width: progress + '%',
+                                    borderRadius: 3,
+                                    background: 'linear-gradient(90deg, #FF375F, #FF6B1A)',
+                                    transition: 'width 0.4s ease',
+                                    boxShadow: '0 0 12px rgba(255,107,26,0.5)',
+                                }} />
                             </div>
+
+                            {/* Botón cancelar */}
+                            <button
+                                onClick={cancelScan}
+                                style={{
+                                    marginTop: 8,
+                                    padding: '10px 28px',
+                                    borderRadius: 12,
+                                    border: '1.5px solid rgba(255,255,255,0.15)',
+                                    background: 'rgba(255,255,255,0.06)',
+                                    color: '#fff',
+                                    fontSize: 14,
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s',
+                                }}
+                            >
+                                ✕ Cancelar
+                            </button>
                         </div>
                     </div>
                 )}
@@ -535,12 +624,8 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
                     </button>
                 )}
 
-                {phase === 'analyzing' && (
-                    <div className="flex items-center justify-center gap-3 py-4 text-[#7B7D94]">
-                        <Spinner />
-                        <span className="font-semibold text-sm">Procesando imagen...</span>
-                    </div>
-                )}
+                {/* En fase analyzing, los controles inferiores están vacíos
+                    (el botón cancelar está en el overlay central) */}
             </div>
 
             {/* Animación CSS para el reticle de enfoque */}

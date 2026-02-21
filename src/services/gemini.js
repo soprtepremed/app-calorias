@@ -134,8 +134,9 @@ function normalizeItem(i, source = 'photo') {
     return {
         food_name: i.name ?? 'Desconocido',
         emoji: i.emoji ?? '🍽️',
-        quantity: Math.max(0, Number(i.quantity ?? 1)),
-        unit: i.unit ?? 'porción',
+        // Quantity vacío: el usuario decide la porción total
+        quantity: null,
+        unit: 'gramos',
         calories: clampNutrient(i.calories, MAX_CALORIES),
         protein_g: clampNutrient(i.protein_g, MAX_MACRO_G),
         carbs_g: clampNutrient(i.carbs_g, MAX_MACRO_G),
@@ -145,6 +146,33 @@ function normalizeItem(i, source = 'photo') {
         cy: i.box ? ((i.box[0] + i.box[2]) / 2) / 10 : 50,   // % vertical
         source,
     }
+}
+
+/**
+ * Unifica ingredientes repetidos: si Gemini reporta "atún" 3 veces,
+ * se fusiona en un solo item sumando macros.
+ * Comparación por nombre normalizado (lowercase, sin tildes).
+ */
+function mergeItems(items) {
+    const map = new Map()
+    for (const item of items) {
+        // Normalizar nombre para comparación (sin tildes, lowercase)
+        const key = item.food_name
+            .toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .trim()
+        if (map.has(key)) {
+            const existing = map.get(key)
+            existing.calories += item.calories
+            existing.protein_g += item.protein_g
+            existing.carbs_g += item.carbs_g
+            existing.fat_g += item.fat_g
+            // Mantener el primer emoji y posición
+        } else {
+            map.set(key, { ...item })
+        }
+    }
+    return Array.from(map.values())
 }
 
 /**
@@ -170,8 +198,10 @@ export async function analyzeFoodPhoto(imageFile) {
         metadata: { items: (parsed.items ?? []).length },
     })
 
+    // Normalizar → unificar duplicados (ej: 3×atún → 1×atún sumado)
+    const normalized = (parsed.items ?? []).map(i => normalizeItem(i, 'photo'))
     return {
-        items: (parsed.items ?? []).map(i => normalizeItem(i, 'photo')),
+        items: mergeItems(normalized),
         confidence: parsed.confidence ?? 'media',
     }
 }
@@ -197,8 +227,10 @@ export async function analyzeBase64Frame(base64jpeg) {
         metadata: { items: (parsed.items ?? []).length },
     })
 
+    // Normalizar → unificar duplicados
+    const normalized = (parsed.items ?? []).map(i => normalizeItem(i, 'scan'))
     return {
-        items: (parsed.items ?? []).map(i => normalizeItem(i, 'scan')),
+        items: mergeItems(normalized),
         confidence: parsed.confidence ?? 'media',
     }
 }
