@@ -128,23 +128,10 @@ function DesktopHeader({ page }) {
 // APP PRINCIPAL
 // ════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  // ── Lectura INSTANTÁNEA de sesión desde localStorage (0ms, sin red) ────
-  // Supabase guarda la sesión en localStorage. La leemos directamente
-  // para decidir al instante si mostrar login o dashboard.
-  const [session, setSession] = useState(() => {
-    try {
-      // Supabase v2: key = sb-{ref}-auth-token
-      const ref = (import.meta.env.VITE_SUPABASE_URL || '').match(/\/\/(.+?)\.supabase/)?.[1]
-      if (!ref) return null
-      const raw = localStorage.getItem(`sb-${ref}-auth-token`)
-      if (!raw) return null
-      const parsed = JSON.parse(raw)
-      // Verificar que tenga estructura válida
-      return parsed?.user ? parsed : null
-    } catch {
-      return null
-    }
-  })
+  // ── Estado de sesión: undefined = cargando, null = sin sesión, object = autenticado
+  // NO leemos localStorage manualmente (era frágil y dependía del formato interno de Supabase).
+  // Dejamos que onAuthStateChange → INITIAL_SESSION nos diga si hay sesión o no.
+  const [session, setSession] = useState(undefined)
   const [page, setPage] = useState('dashboard')
   const [config, setConfig] = useState(null)
   const [configId, setConfigId] = useState(null)
@@ -303,8 +290,10 @@ export default function App() {
 
 
   // ── Estados de carga ────────────────────────────────────────────────────
-  // Sin sesión → Auth (instantáneo, se leyó de localStorage)
-  if (!session) return <Auth />
+  // undefined = esperando confirmación de Supabase → mostrar loading
+  if (session === undefined) return <LoadingScreen />
+  // null = Supabase confirmó que NO hay sesión → mostrar login
+  if (session === null) return <Auth />
 
   // ── Contenido por página ────────────────────────────────────────────────
   const PageContent = () => {
