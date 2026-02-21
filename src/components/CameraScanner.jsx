@@ -21,7 +21,6 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import { analyzeBase64Frame } from '../services/gemini'
 import { SparkIcon, XIcon } from './Icons'
-import { Spinner } from './UI'
 import ScanReview from './ScanReview'
 
 export default function CameraScanner({ open, onClose, onSave, showToast }) {
@@ -490,7 +489,7 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
                     </div>
                 )}
 
-                {/* Overlay de análisis — barra de progreso + botón cancelar */}
+                {/* Overlay de análisis — Foto circular con arco de progreso */}
                 {phase === 'analyzing' && (
                     <div style={{
                         position: 'absolute',
@@ -499,49 +498,105 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
                         flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        background: 'rgba(0,0,0,0.6)',
-                        backdropFilter: 'blur(4px)',
+                        background: '#0D0D11',
                         zIndex: 20,
                     }}>
-                        <div className="flex flex-col items-center gap-5">
-                            {/* Icono central con pulso */}
-                            <div className="relative w-20 h-20">
-                                <div className="absolute inset-0 rounded-full"
-                                    style={{
-                                        background: 'conic-gradient(#FF6B1A ' + progress + '%, transparent ' + progress + '%)',
-                                        mask: 'radial-gradient(transparent 60%, black 62%)',
-                                        WebkitMask: 'radial-gradient(transparent 60%, black 62%)',
-                                        transition: 'all 0.4s ease',
-                                    }} />
-                                <div className="absolute inset-0 border-4 border-white/5 rounded-full" />
-                                <div className="absolute inset-4 flex items-center justify-center">
-                                    <SparkIcon size={24} className="text-[#FF6B1A]" />
+                        <div className="flex flex-col items-center gap-6">
+                            {/* Foto circular con arco de progreso */}
+                            <div style={{
+                                position: 'relative',
+                                width: 220,
+                                height: 220,
+                            }}>
+                                {/* Arco de progreso (fondo gris) */}
+                                <div style={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    borderRadius: '50%',
+                                    background: 'conic-gradient(rgba(255,255,255,0.06) 0deg, rgba(255,255,255,0.06) 360deg)',
+                                }} />
+                                {/* Arco de progreso (relleno gradient) */}
+                                <div style={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    borderRadius: '50%',
+                                    background: `conic-gradient(#30D158 0deg, #FF6B1A ${progress * 3.6}deg, transparent ${progress * 3.6}deg)`,
+                                    transition: 'all 0.4s ease',
+                                }} />
+                                {/* Máscara interior para crear el anillo */}
+                                <div style={{
+                                    position: 'absolute',
+                                    inset: 8,
+                                    borderRadius: '50%',
+                                    background: '#0D0D11',
+                                }} />
+                                {/* Foto dentro del círculo */}
+                                {snapshot && (
+                                    <img
+                                        src={snapshot}
+                                        alt="captura"
+                                        style={{
+                                            position: 'absolute',
+                                            inset: 12,
+                                            borderRadius: '50%',
+                                            objectFit: 'cover',
+                                            width: 'calc(100% - 24px)',
+                                            height: 'calc(100% - 24px)',
+                                        }}
+                                    />
+                                )}
+                                {/* Percentage badge */}
+                                <div style={{
+                                    position: 'absolute',
+                                    bottom: 4,
+                                    right: 4,
+                                    background: '#1C1C26',
+                                    border: '3px solid #0D0D11',
+                                    borderRadius: 20,
+                                    padding: '3px 10px',
+                                    fontSize: 13,
+                                    fontWeight: 900,
+                                    color: '#30D158',
+                                }}>
+                                    {progress}%
                                 </div>
                             </div>
 
-                            {/* Texto + porcentaje */}
+                            {/* Texto */}
                             <div className="text-center">
-                                <p className="text-white font-black text-lg">Analizando...</p>
-                                <p className="text-[#7B7D94] text-sm mt-1">
-                                    Gemini IA detectando alimentos · {progress}%
+                                <p style={{
+                                    color: '#fff',
+                                    fontSize: 18,
+                                    fontWeight: 900,
+                                    marginBottom: 6,
+                                }}>
+                                    Analizando tu comida...
+                                </p>
+                                <p style={{
+                                    color: '#7B7D94',
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    animation: 'pulse 1.5s ease-in-out infinite',
+                                }}>
+                                    🤖 Gemini IA detectando ingredientes
                                 </p>
                             </div>
 
                             {/* Barra de progreso horizontal */}
                             <div style={{
-                                width: 220,
-                                height: 6,
-                                borderRadius: 3,
-                                background: 'rgba(255,255,255,0.08)',
+                                width: 200,
+                                height: 4,
+                                borderRadius: 2,
+                                background: 'rgba(255,255,255,0.06)',
                                 overflow: 'hidden',
                             }}>
                                 <div style={{
                                     height: '100%',
                                     width: progress + '%',
-                                    borderRadius: 3,
-                                    background: 'linear-gradient(90deg, #FF375F, #FF6B1A)',
+                                    borderRadius: 2,
+                                    background: 'linear-gradient(90deg, #30D158, #FF6B1A)',
                                     transition: 'width 0.4s ease',
-                                    boxShadow: '0 0 12px rgba(255,107,26,0.5)',
+                                    boxShadow: '0 0 8px rgba(48,209,88,0.4)',
                                 }} />
                             </div>
 
@@ -549,12 +604,12 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
                             <button
                                 onClick={cancelScan}
                                 style={{
-                                    marginTop: 8,
+                                    marginTop: 4,
                                     padding: '10px 28px',
-                                    borderRadius: 12,
-                                    border: '1.5px solid rgba(255,255,255,0.15)',
-                                    background: 'rgba(255,255,255,0.06)',
-                                    color: '#fff',
+                                    borderRadius: 14,
+                                    border: '1.5px solid rgba(255,255,255,0.1)',
+                                    background: 'rgba(255,255,255,0.04)',
+                                    color: 'rgba(255,255,255,0.5)',
                                     fontSize: 14,
                                     fontWeight: 700,
                                     cursor: 'pointer',
@@ -634,6 +689,10 @@ export default function CameraScanner({ open, onClose, onSave, showToast }) {
                     0% { transform: scale(1.5); opacity: 0; }
                     30% { transform: scale(1); opacity: 1; }
                     100% { transform: scale(0.95); opacity: 0.6; }
+                }
+                @keyframes pulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.4; }
                 }
             `}</style>
         </div>

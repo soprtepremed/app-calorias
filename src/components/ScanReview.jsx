@@ -1,40 +1,45 @@
 /**
- * ScanReview.jsx — Pantalla de revisión de alimentos detectados por el escáner.
+ * ScanReview.jsx — Pantalla de revisión post-escaneo.
  *
- * Muestra:
- * - Miniatura del snapshot capturado
- * - Campo de cantidad total (el usuario ingresa los gramos totales)
- * - Resumen de macros totales de los seleccionados
- * - Lista de alimentos con checkbox para seleccionar/deseleccionar
- * - Botones "Repetir" y "Confirmar"
+ * Diseño inspirado en apps tipo Foodvisor:
+ * - Snapshot circular con badge de confianza
+ * - Calorías en tipografía grande + barra de macros proporcional
+ * - Lista de ingredientes con nombre y kcal
+ * - Campo de cantidad total (gramos)
+ * - Botón "Confirmar" negro estilo premium
  *
  * Props:
- *   snapshot      — dataURL del frame capturado
- *   items         — array de alimentos detectados
- *   checked       — array de índices seleccionados
- *   totalQty      — string con la cantidad total ingresada
+ *   snapshot         — dataURL del frame capturado
+ *   items            — array de alimentos detectados
+ *   checked          — array de índices seleccionados
+ *   totalQty         — string con la cantidad total ingresada
  *   onTotalQtyChange — (value: string) => void
- *   onToggle      — (idx) => void
- *   onSave        — () => void
- *   onRestart     — () => void
- *   onClose       — () => void
- *   rootStyle     — estilos inline del contenedor raíz
- *   headerStyle   — estilos inline del header
- *   bottomStyle   — estilos inline del footer
+ *   onToggle         — (idx) => void
+ *   onSave           — () => void
+ *   onRestart        — () => void
+ *   onClose          — () => void
+ *   rootStyle        — estilos inline del contenedor raíz
+ *   headerStyle      — estilos inline del header
+ *   bottomStyle      — estilos inline del footer
  */
 import { CheckIcon, XIcon } from './Icons'
-import { PrimaryButton, OutlineButton } from './UI'
 
 export default function ScanReview({
     snapshot, items, checked, totalQty, onTotalQtyChange,
     onToggle, onSave, onRestart, onClose,
     rootStyle, headerStyle, bottomStyle,
 }) {
-    // Totales de macros de los seleccionados
+    // ── Totales de macros de los seleccionados ────────────────────────────
     const totalCal = checked.reduce((s, i) => s + Math.round(items[i]?.calories ?? 0), 0)
     const totalP = checked.reduce((s, i) => s + Math.round(items[i]?.protein_g ?? 0), 0)
     const totalC = checked.reduce((s, i) => s + Math.round(items[i]?.carbs_g ?? 0), 0)
     const totalF = checked.reduce((s, i) => s + Math.round(items[i]?.fat_g ?? 0), 0)
+
+    // Porcentajes para la barra proporcional (evitar div/0)
+    const macroTotal = totalP + totalC + totalF || 1
+    const pPct = Math.round((totalP / macroTotal) * 100)
+    const cPct = Math.round((totalC / macroTotal) * 100)
+    const fPct = 100 - pPct - cPct
 
     return (
         <div style={rootStyle}>
@@ -56,49 +61,172 @@ export default function ScanReview({
             {/* Contenido scrollable */}
             <div style={{ flex: 1, overflowY: 'auto', background: '#0D0D11' }}>
 
-                {/* Snapshot miniatura */}
+                {/* ── Snapshot circular ── */}
                 {snapshot && (
-                    <div style={{ padding: '12px 16px 0' }}>
+                    <div style={{
+                        display: 'flex',
+                        justifyContent: 'center',
+                        padding: '20px 16px 8px',
+                    }}>
                         <div style={{
-                            borderRadius: 16,
-                            overflow: 'hidden',
-                            height: 140,
                             position: 'relative',
+                            width: 160,
+                            height: 160,
                         }}>
-                            <img
-                                src={snapshot}
-                                alt="captura"
-                                style={{
-                                    width: '100%',
-                                    height: '100%',
-                                    objectFit: 'cover',
-                                }}
-                            />
+                            {/* Borde gradient */}
                             <div style={{
                                 position: 'absolute',
-                                bottom: 8, right: 8,
-                                background: 'rgba(0,0,0,0.7)',
-                                backdropFilter: 'blur(4px)',
-                                borderRadius: 20,
-                                padding: '4px 10px',
-                                fontSize: 11,
-                                fontWeight: 700,
-                                color: '#30D158',
+                                inset: 0,
+                                borderRadius: '50%',
+                                background: 'linear-gradient(135deg, #30D158, #FF6B1A)',
+                                padding: 3,
                             }}>
-                                {items.length} detectado{items.length > 1 ? 's' : ''}
+                                <div style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    borderRadius: '50%',
+                                    overflow: 'hidden',
+                                }}>
+                                    <img
+                                        src={snapshot}
+                                        alt="captura"
+                                        style={{
+                                            width: '100%',
+                                            height: '100%',
+                                            objectFit: 'cover',
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                            {/* Badge detectados */}
+                            <div style={{
+                                position: 'absolute',
+                                bottom: -4,
+                                left: '50%',
+                                transform: 'translateX(-50%)',
+                                background: '#1C1C26',
+                                border: '2px solid #0D0D11',
+                                borderRadius: 16,
+                                padding: '3px 12px',
+                                fontSize: 11,
+                                fontWeight: 800,
+                                color: '#30D158',
+                                whiteSpace: 'nowrap',
+                            }}>
+                                ✅ {items.length} detectado{items.length > 1 ? 's' : ''}
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* Campo de cantidad total */}
-                <div style={{ padding: '12px 16px 0' }}>
+                {/* ── Calorías grandes + barra de macros ── */}
+                <div style={{ padding: '16px 20px 8px', textAlign: 'center' }}>
+                    {/* Calorías */}
+                    <div style={{
+                        fontSize: 48,
+                        fontWeight: 900,
+                        color: '#FF375F',
+                        lineHeight: 1,
+                        letterSpacing: '-0.02em',
+                    }}>
+                        {totalCal}
+                    </div>
+                    <div style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: '#FF375F80',
+                        marginTop: 2,
+                    }}>
+                        Calorías
+                    </div>
+
+                    {/* Barra proporcional de macros */}
+                    <div style={{
+                        display: 'flex',
+                        height: 8,
+                        borderRadius: 4,
+                        overflow: 'hidden',
+                        margin: '14px 0 8px',
+                        gap: 2,
+                    }}>
+                        <div style={{
+                            width: cPct + '%',
+                            background: '#FF9F0A',
+                            borderRadius: '4px 0 0 4px',
+                            transition: 'width 0.3s',
+                        }} />
+                        <div style={{
+                            width: fPct + '%',
+                            background: '#0A84FF',
+                            transition: 'width 0.3s',
+                        }} />
+                        <div style={{
+                            width: pPct + '%',
+                            background: '#30D158',
+                            borderRadius: '0 4px 4px 0',
+                            transition: 'width 0.3s',
+                        }} />
+                    </div>
+
+                    {/* Leyenda de macros */}
+                    <div style={{
+                        display: 'flex',
+                        justifyContent: 'center',
+                        gap: 20,
+                        fontSize: 12,
+                        fontWeight: 700,
+                    }}>
+                        <span>
+                            <span style={{
+                                display: 'inline-block',
+                                width: 8, height: 8,
+                                borderRadius: '50%',
+                                background: '#FF9F0A',
+                                marginRight: 5,
+                                verticalAlign: 'middle',
+                            }} />
+                            <span style={{ color: '#FF9F0A' }}>Carbos {totalC}g</span>
+                        </span>
+                        <span>
+                            <span style={{
+                                display: 'inline-block',
+                                width: 8, height: 8,
+                                borderRadius: '50%',
+                                background: '#0A84FF',
+                                marginRight: 5,
+                                verticalAlign: 'middle',
+                            }} />
+                            <span style={{ color: '#0A84FF' }}>Grasas {totalF}g</span>
+                        </span>
+                        <span>
+                            <span style={{
+                                display: 'inline-block',
+                                width: 8, height: 8,
+                                borderRadius: '50%',
+                                background: '#30D158',
+                                marginRight: 5,
+                                verticalAlign: 'middle',
+                            }} />
+                            <span style={{ color: '#30D158' }}>Proteína {totalP}g</span>
+                        </span>
+                    </div>
+                </div>
+
+                {/* ── Separador ── */}
+                <div style={{
+                    height: 1,
+                    background: 'rgba(255,255,255,0.06)',
+                    margin: '8px 20px',
+                }} />
+
+                {/* ── Campo de cantidad total ── */}
+                <div style={{ padding: '8px 20px' }}>
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: 10,
                         background: 'rgba(255,255,255,0.04)',
-                        border: '1.5px solid rgba(255,255,255,0.1)',
+                        border: '1.5px solid rgba(255,255,255,0.08)',
                         borderRadius: 14,
                         padding: '10px 14px',
                     }}>
@@ -142,42 +270,15 @@ export default function ScanReview({
                     </div>
                 </div>
 
-                {/* Resumen de macros */}
-                <div style={{ padding: '12px 16px' }}>
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(4, 1fr)',
-                        gap: 8,
-                    }}>
-                        {[
-                            { label: 'Calorías', value: totalCal, unit: 'kcal', color: '#FF375F' },
-                            { label: 'Proteína', value: totalP, unit: 'g', color: '#0A84FF' },
-                            { label: 'Carbos', value: totalC, unit: 'g', color: '#FF9F0A' },
-                            { label: 'Grasa', value: totalF, unit: 'g', color: '#BF5AF2' },
-                        ].map(m => (
-                            <div key={m.label} style={{
-                                background: `${m.color}15`,
-                                border: `1px solid ${m.color}30`,
-                                borderRadius: 14,
-                                padding: '10px 6px',
-                                textAlign: 'center',
-                            }}>
-                                <div style={{ color: m.color, fontSize: 18, fontWeight: 900 }}>
-                                    {m.value}
-                                </div>
-                                <div style={{ color: `${m.color}AA`, fontSize: 9, fontWeight: 700, marginTop: 2 }}>
-                                    {m.unit}
-                                </div>
-                                <div style={{ color: '#8E8EA0', fontSize: 9, fontWeight: 600, marginTop: 4 }}>
-                                    {m.label}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
+                {/* ── Separador ── */}
+                <div style={{
+                    height: 1,
+                    background: 'rgba(255,255,255,0.06)',
+                    margin: '8px 20px',
+                }} />
 
-                {/* Lista de alimentos */}
-                <div style={{ padding: '0 16px 16px' }}>
+                {/* ── Ingredientes detectados ── */}
+                <div style={{ padding: '8px 20px 20px' }}>
                     <p style={{
                         fontSize: 10,
                         fontWeight: 900,
@@ -186,10 +287,10 @@ export default function ScanReview({
                         letterSpacing: '0.1em',
                         marginBottom: 10,
                     }}>
-                        Toca para seleccionar / deseleccionar
+                        Ingredientes detectados por IA
                     </p>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {items.map((item, idx) => {
                             const sel = checked.includes(idx)
                             return (
@@ -201,87 +302,53 @@ export default function ScanReview({
                                         alignItems: 'center',
                                         gap: 12,
                                         padding: '12px 14px',
-                                        borderRadius: 16,
+                                        borderRadius: 14,
                                         border: sel
-                                            ? '1.5px solid rgba(48,209,88,0.4)'
-                                            : '1.5px solid rgba(255,255,255,0.06)',
+                                            ? '1.5px solid rgba(48,209,88,0.3)'
+                                            : '1.5px solid rgba(255,255,255,0.04)',
                                         background: sel
-                                            ? 'rgba(48,209,88,0.08)'
-                                            : 'rgba(255,255,255,0.03)',
+                                            ? 'rgba(48,209,88,0.06)'
+                                            : 'transparent',
                                         transition: 'all 0.2s',
                                         textAlign: 'left',
                                         width: '100%',
                                         cursor: 'pointer',
                                     }}
                                 >
-                                    {/* Emoji grande */}
-                                    <div style={{
-                                        fontSize: 28,
-                                        lineHeight: 1,
-                                        width: 40,
-                                        textAlign: 'center',
-                                        flexShrink: 0,
-                                    }}>
+                                    {/* Emoji */}
+                                    <span style={{ fontSize: 24, flexShrink: 0 }}>
                                         {item.emoji}
-                                    </div>
+                                    </span>
 
-                                    {/* Info del alimento — sin cantidad (el total es global) */}
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <p style={{
-                                            color: '#fff',
-                                            fontSize: 14,
-                                            fontWeight: 800,
-                                            lineHeight: 1.2,
-                                            marginBottom: 4,
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
-                                            whiteSpace: 'nowrap',
-                                        }}>
-                                            {item.food_name}
-                                        </p>
-                                        <p style={{
-                                            color: '#8E8EA0',
-                                            fontSize: 11,
-                                            fontWeight: 600,
-                                        }}>
-                                            <span style={{ color: '#0A84FF' }}>P:{Math.round(item.protein_g)}g</span>
-                                            {' '}
-                                            <span style={{ color: '#FF9F0A' }}>C:{Math.round(item.carbs_g)}g</span>
-                                            {' '}
-                                            <span style={{ color: '#BF5AF2' }}>G:{Math.round(item.fat_g)}g</span>
-                                        </p>
-                                    </div>
+                                    {/* Nombre */}
+                                    <span style={{
+                                        flex: 1,
+                                        color: '#fff',
+                                        fontSize: 14,
+                                        fontWeight: 700,
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                    }}>
+                                        {item.food_name}
+                                    </span>
 
                                     {/* Calorías */}
-                                    <div style={{
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        alignItems: 'flex-end',
-                                        gap: 4,
+                                    <span style={{
+                                        color: '#8E8EA0',
+                                        fontSize: 13,
+                                        fontWeight: 600,
                                         flexShrink: 0,
                                     }}>
-                                        <span style={{
-                                            color: '#FF375F',
-                                            fontSize: 16,
-                                            fontWeight: 900,
-                                        }}>
-                                            {Math.round(item.calories)}
-                                        </span>
-                                        <span style={{
-                                            color: '#FF375F',
-                                            fontSize: 9,
-                                            fontWeight: 700,
-                                        }}>
-                                            kcal
-                                        </span>
-                                    </div>
+                                        {Math.round(item.calories)} kcal
+                                    </span>
 
-                                    {/* Checkbox visual */}
+                                    {/* Checkbox */}
                                     <div style={{
-                                        width: 24,
-                                        height: 24,
-                                        borderRadius: 8,
-                                        border: sel ? '2px solid #30D158' : '2px solid rgba(255,255,255,0.15)',
+                                        width: 22,
+                                        height: 22,
+                                        borderRadius: 7,
+                                        border: sel ? '2px solid #30D158' : '2px solid rgba(255,255,255,0.12)',
                                         background: sel ? '#30D158' : 'transparent',
                                         display: 'flex',
                                         alignItems: 'center',
@@ -289,7 +356,7 @@ export default function ScanReview({
                                         flexShrink: 0,
                                         transition: 'all 0.2s',
                                     }}>
-                                        {sel && <CheckIcon size={14} className="text-white" />}
+                                        {sel && <CheckIcon size={13} className="text-white" />}
                                     </div>
                                 </button>
                             )
@@ -298,7 +365,7 @@ export default function ScanReview({
                 </div>
             </div>
 
-            {/* Controles inferiores */}
+            {/* ── Controles inferiores ── */}
             <div style={bottomStyle}>
                 {checked.length > 0 && (
                     <div style={{
@@ -316,13 +383,48 @@ export default function ScanReview({
                         </span>
                     </div>
                 )}
-                <div className="flex gap-3">
-                    <OutlineButton onClick={onRestart} className="!border-white/20 !text-white/60">
-                        Repetir
-                    </OutlineButton>
-                    <PrimaryButton onClick={onSave}>
-                        <CheckIcon size={18} /> Confirmar
-                    </PrimaryButton>
+                <div style={{ display: 'flex', gap: 10 }}>
+                    {/* Botón Repetir */}
+                    <button
+                        onClick={onRestart}
+                        style={{
+                            flex: '0 0 auto',
+                            padding: '14px 20px',
+                            borderRadius: 16,
+                            border: '1.5px solid rgba(255,255,255,0.1)',
+                            background: 'transparent',
+                            color: 'rgba(255,255,255,0.5)',
+                            fontSize: 14,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                        }}
+                    >
+                        ↺ Repetir
+                    </button>
+                    {/* Botón Confirmar — estilo premium oscuro */}
+                    <button
+                        onClick={onSave}
+                        style={{
+                            flex: 1,
+                            padding: '14px 24px',
+                            borderRadius: 16,
+                            border: 'none',
+                            background: '#fff',
+                            color: '#000',
+                            fontSize: 15,
+                            fontWeight: 900,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 8,
+                            transition: 'all 0.2s',
+                            letterSpacing: '0.02em',
+                        }}
+                    >
+                        Confirmar <span style={{ fontSize: 16 }}>→</span>
+                    </button>
                 </div>
             </div>
         </div>
