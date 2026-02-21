@@ -36,9 +36,13 @@ async function callGemini(
   maxTokens: number,
   _retry = false,
 ): Promise<Response> {
+  // IMPORTANTE: Gemini 2.5-flash incluye tokens de "pensamiento" en maxOutputTokens.
+  // Con 1024, el modelo gasta ~980 pensando y la respuesta JSON se trunca.
+  // Mínimo 8192 para garantizar respuestas completas.
+  const safeMaxTokens = Math.max(maxTokens, 8192)
   const body = JSON.stringify({
     contents: [{ parts }],
-    generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens },
+    generationConfig: { temperature: 0.1, maxOutputTokens: safeMaxTokens },
   })
 
   for (let i = 0; i < MODELS.length; i++) {
