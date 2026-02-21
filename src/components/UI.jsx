@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { XIcon } from './Icons'
 
 /**
@@ -30,15 +30,12 @@ export function Spinner({ size = 'md' }) {
 }
 
 /**
- * Modal — Bottom Sheet. Fondo semi-transparente con blur.
+ * Modal — Bottom Sheet adaptado a móvil.
+ * Usa overlay scrolleable con overscroll-behavior:contain
+ * para evitar que el scroll del fondo se filtre.
  */
 export function Modal({ open, onClose, title, children }) {
     const overlayRef = useRef(null)
-
-    useEffect(() => {
-        document.body.style.overflow = open ? 'hidden' : ''
-        return () => { document.body.style.overflow = '' }
-    }, [open])
 
     if (!open) return null
 
@@ -46,12 +43,17 @@ export function Modal({ open, onClose, title, children }) {
         <div
             ref={overlayRef}
             className="fixed inset-0 bg-black/75 z-30 flex items-end justify-center"
-            style={{ backdropFilter: 'blur(8px)' }}
+            style={{
+                backdropFilter: 'blur(8px)',
+                overscrollBehavior: 'contain',
+            }}
             onClick={e => { if (e.target === overlayRef.current) onClose() }}
         >
             <div className="bg-[#1C1C22] border border-[#2E2E3A] rounded-t-3xl
-                      w-full max-w-lg pb-10 max-h-[92vh] overflow-y-auto
-                      animate-slide-up">
+                      w-full max-w-lg pb-10 overflow-y-auto
+                      animate-slide-up"
+                style={{ maxHeight: '92dvh' }}
+            >
 
                 {/* Handle */}
                 <div className="sticky top-0 bg-[#1C1C22] pt-4 pb-3 px-5 border-b border-[#2E2E3A] z-10 rounded-t-3xl">

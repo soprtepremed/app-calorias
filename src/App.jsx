@@ -219,10 +219,20 @@ export default function App() {
     const unsub = onAuthChange(async (sess, event) => {
       if (cancelled) return
 
-      // Ignorar refreshes de token y sesión inicial — no hay cambio real
-      if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
-        // Solo actualizar la referencia de sesión silenciosamente
+      // En TOKEN_REFRESHED solo actualizar ref de sesión silenciosamente
+      if (event === 'TOKEN_REFRESHED') {
         if (sess) setSession(sess)
+        return
+      }
+
+      // INITIAL_SESSION: al recargar la página, Supabase confirma la sesión
+      // Necesitamos cargar config si aún no la tenemos
+      if (event === 'INITIAL_SESSION') {
+        if (sess) {
+          setSession(sess)
+          currentUserRef.current = sess.user?.id ?? null
+          if (!configLoaded) await loadConfig()
+        }
         return
       }
 
