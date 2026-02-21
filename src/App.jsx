@@ -8,6 +8,7 @@ import Dashboard from './components/Dashboard'
 import History from './components/History'
 import Weight from './components/Weight'
 import Settings from './components/Settings'
+import CameraScanner from './components/CameraScanner'
 import { Toast } from './components/UI'
 import { HomeIcon, ChartIcon, ScaleIcon, SettingsIcon, FlameIcon } from './components/Icons'
 
@@ -135,6 +136,7 @@ export default function App() {
   const [config, setConfig] = useState(null)
   const [configId, setConfigId] = useState(null)
   const [toast, setToast] = useState(null)
+  const [scanner, setScanner] = useState(false) // Estado del escáner a nivel raíz
 
   // Ref para pasar getter real de vasos al recordatorio de agua
   const glassesRef = useRef(0)
@@ -228,7 +230,7 @@ export default function App() {
   // ── Contenido por página ────────────────────────────────────────────────
   const PageContent = () => {
     switch (page) {
-      case 'dashboard': return <Dashboard config={config} showToast={showToast} onGlassesChange={updateGlassesRef} />
+      case 'dashboard': return <Dashboard config={config} showToast={showToast} onGlassesChange={updateGlassesRef} onOpenScanner={() => setScanner(true)} />
       case 'history': return <History config={config} />
       case 'weight': return <Weight showToast={showToast} />
       case 'settings': return (
@@ -316,6 +318,18 @@ export default function App() {
       </nav>
 
       <Toast toast={toast} />
+
+      {/* Scanner de cámara — a nivel RAÍZ para cubrir todo */}
+      <CameraScanner
+        open={scanner}
+        onClose={() => setScanner(false)}
+        onSave={items => {
+          // Delegamos al Dashboard via evento custom
+          window.dispatchEvent(new CustomEvent('scanner-save', { detail: items }))
+          setScanner(false)
+        }}
+        showToast={showToast}
+      />
     </div>
   )
 }

@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase, getFoodByDate, getWaterByDate, addFood, deleteFood, setWaterGlasses, todayStr, logActivity } from '../services/supabase'
 import { withOfflineFallback } from '../services/offlineQueue'
 import { EmptyState, Spinner } from './UI'
-import CameraScanner from './CameraScanner'
 import FastingTracker from './FastingTracker'
 import WaterTracker from './WaterTracker'
 import AddFoodModal from './AddFoodModal'
@@ -239,13 +238,12 @@ function FoodList({ foods, onDelete }) {
 // ════════════════════════════════════════════════════════════════
 // DASHBOARD PRINCIPAL
 // ════════════════════════════════════════════════════════════════
-export default function Dashboard({ config, showToast, onGlassesChange }) {
+export default function Dashboard({ config, showToast, onGlassesChange, onOpenScanner }) {
     const today = todayStr()
     const [foods, setFoods] = useState([])
     const [glasses, setGlasses] = useState(0)
-    const [loading, setLoading] = useState(true)   // true → spinner hasta tener datos reales
+    const [loading, setLoading] = useState(true)
     const [modal, setModal] = useState(false)
-    const [scanner, setScanner] = useState(false)
 
     const totals = foods.reduce(
         (acc, f) => ({
@@ -308,6 +306,13 @@ export default function Dashboard({ config, showToast, onGlassesChange }) {
             ? `${items.length > 1 ? items.length + ' alimentos añadidos' : 'Alimento registrado'}`
             : '📦 Guardado offline — se sincronizará')
     }
+
+    // Escuchar evento del scanner (viene de App.jsx via CustomEvent)
+    useEffect(() => {
+        const handler = (e) => handleSave(e.detail, 'otro')
+        window.addEventListener('scanner-save', handler)
+        return () => window.removeEventListener('scanner-save', handler)
+    }, [handleSave])
 
     const handleDelete = async (id) => {
         if (!confirm('¿Eliminar este alimento?')) return
@@ -427,15 +432,7 @@ export default function Dashboard({ config, showToast, onGlassesChange }) {
                 onClose={() => setModal(false)}
                 onSave={handleSave}
                 showToast={showToast}
-                onOpenScanner={() => setScanner(true)}
-            />
-
-            {/* Scanner cámara */}
-            <CameraScanner
-                open={scanner}
-                onClose={() => setScanner(false)}
-                onSave={items => handleSave(items, 'otro')}
-                showToast={showToast}
+                onOpenScanner={onOpenScanner}
             />
         </div>
     )
