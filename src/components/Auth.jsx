@@ -15,11 +15,13 @@ export default function Auth() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
 
+    // IMPORTANTE: TODOS los hooks deben declararse ANTES de cualquier return condicional
+    // (Regla de Hooks de React — mismo orden en cada render)
+    const busy = useRef(false)
+
     if (showRegister) {
         return <Register onBack={() => setShowRegister(false)} />
     }
-
-    const busy = useRef(false)
 
     const handleLogin = async (e) => {
         e.preventDefault()
