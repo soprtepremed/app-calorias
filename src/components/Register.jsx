@@ -405,31 +405,72 @@ export default function Register({ onBack }) {
                             </div>
                         </div>
 
-                        {/* Calorías */}
+                        {/* Calorías — Stepper + Slider */}
                         <div>
                             <div className="flex justify-between items-center mb-2">
                                 <FieldLabel>Meta de calorías (kcal)</FieldLabel>
-                                <span className="text-[#FF375F] font-black text-sm">{calorieGoal}</span>
                             </div>
-                            <input type="range" min="1000" max="4000" step="50"
-                                value={calorieGoal} onChange={e => setCalorieGoal(Number(e.target.value))}
+                            {/* Botones +/- con valor central */}
+                            <div className="flex items-center justify-center gap-3 mb-3">
+                                <button type="button"
+                                    onClick={() => setCalorieGoal(g => Math.max(1000, Math.round((g - 100) / 100) * 100))}
+                                    className="w-12 h-12 rounded-xl text-xl font-black flex items-center justify-center active:scale-90 transition-all"
+                                    style={{ background: 'rgba(255,55,95,0.12)', border: '1px solid rgba(255,55,95,0.3)', color: '#FF375F' }}>
+                                    −
+                                </button>
+                                <div className="flex-1 text-center">
+                                    <span className="text-3xl font-black num" style={{ color: '#FF375F' }}>
+                                        {Math.round(calorieGoal / 100) * 100}
+                                    </span>
+                                    <p className="text-[10px] text-[#8E8EA0] font-semibold">kcal / día</p>
+                                </div>
+                                <button type="button"
+                                    onClick={() => setCalorieGoal(g => Math.min(5000, Math.round((g + 100) / 100) * 100))}
+                                    className="w-12 h-12 rounded-xl text-xl font-black flex items-center justify-center active:scale-90 transition-all"
+                                    style={{ background: 'rgba(255,55,95,0.12)', border: '1px solid rgba(255,55,95,0.3)', color: '#FF375F' }}>
+                                    +
+                                </button>
+                            </div>
+                            {/* Slider como ajuste secundario */}
+                            <input type="range" min="1000" max="5000" step="100"
+                                value={Math.round(calorieGoal / 100) * 100}
+                                onChange={e => setCalorieGoal(Number(e.target.value))}
                                 className="w-full accent-[#FF375F]" />
                             <div className="flex justify-between text-[9px] text-[#8E8EA0] mt-1">
-                                <span>1000</span><span>Recomendado: {calcTDEE(Number(weight) || 70, Number(height) || 170, Number(age) || 25, sex, activity)}</span><span>4000</span>
+                                <span>1000</span><span>Recomendado: {calcTDEE(Number(weight) || 70, Number(height) || 170, Number(age) || 25, sex, activity)}</span><span>5000</span>
                             </div>
                         </div>
 
-                        {/* Agua */}
+                        {/* Agua — Stepper + Slider */}
                         <div>
                             <div className="flex justify-between items-center mb-2">
                                 <FieldLabel>Meta de agua (vasos de 250ml)</FieldLabel>
-                                <span className="text-[#5AC8FA] font-black text-sm">{waterGoal} 💧</span>
                             </div>
-                            <input type="range" min="4" max="16" step="1"
+                            <div className="flex items-center justify-center gap-3 mb-3">
+                                <button type="button"
+                                    onClick={() => setWaterGoal(g => Math.max(1, g - 1))}
+                                    className="w-12 h-12 rounded-xl text-xl font-black flex items-center justify-center active:scale-90 transition-all"
+                                    style={{ background: 'rgba(90,200,250,0.12)', border: '1px solid rgba(90,200,250,0.3)', color: '#5AC8FA' }}>
+                                    −
+                                </button>
+                                <div className="flex-1 text-center">
+                                    <span className="text-3xl font-black num" style={{ color: '#5AC8FA' }}>
+                                        {waterGoal} 💧
+                                    </span>
+                                    <p className="text-[10px] text-[#8E8EA0] font-semibold">{waterGoal * 250}ml / día</p>
+                                </div>
+                                <button type="button"
+                                    onClick={() => setWaterGoal(g => Math.min(20, g + 1))}
+                                    className="w-12 h-12 rounded-xl text-xl font-black flex items-center justify-center active:scale-90 transition-all"
+                                    style={{ background: 'rgba(90,200,250,0.12)', border: '1px solid rgba(90,200,250,0.3)', color: '#5AC8FA' }}>
+                                    +
+                                </button>
+                            </div>
+                            <input type="range" min="1" max="20" step="1"
                                 value={waterGoal} onChange={e => setWaterGoal(Number(e.target.value))}
                                 className="w-full accent-[#5AC8FA]" />
                             <p className="text-[9px] text-[#8E8EA0] mt-1">
-                                {waterGoal * 250}ml/día · Recomendado: {calcWaterGoal(Number(weight) || 70)} vasos
+                                Recomendado: {calcWaterGoal(Number(weight) || 70)} vasos
                             </p>
                         </div>
 

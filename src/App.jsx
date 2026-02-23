@@ -155,6 +155,7 @@ export default function App() {
   // se borra al cerrar pestaña/navegador.
   const [session, setSession] = useState(null)
   const [authReady, setAuthReady] = useState(false) // true cuando INITIAL_SESSION se procesó
+  const authReadyRef = useRef(false) // Ref para evitar stale closure en onAuthChange
   const [page, setPage] = useState('dashboard')
   const [config, setConfig] = useState(null)
   const [configId, setConfigId] = useState(null)
@@ -261,6 +262,7 @@ export default function App() {
 
       if (event === 'INITIAL_SESSION') {
         // Evento confiable: el cliente Supabase está completamente inicializado
+        authReadyRef.current = true
         setAuthReady(true)
         if (sess) {
           setSession(sess)
@@ -272,7 +274,7 @@ export default function App() {
         }
       } else if (event === 'SIGNED_IN' && sess) {
         setSession(sess)
-        if (authReady) {
+        if (authReadyRef.current) {
           // Login genuino (post-inicialización) → cargar config
           await loadConfig('SIGNED_IN')
         } else {
@@ -282,6 +284,7 @@ export default function App() {
         }
       } else if (event === 'SIGNED_OUT') {
         console.log('[Auth] Sesión cerrada')
+        authReadyRef.current = true
         setAuthReady(true)
         setSession(null)
         setConfig(null)

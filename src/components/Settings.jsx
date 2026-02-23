@@ -51,22 +51,46 @@ export default function Settings({ config, configId, onConfigUpdate, showToast }
     const [waterInt, setWaterInt] = useState(String(config?.water_reminder_hours ?? 2))
     const [notifOn, setNotifOn] = useState(config?.notifications_enabled ?? true)
     const [saving, setSaving] = useState(false)
+    const [showConfirm, setShowConfirm] = useState(false)
 
-    // Datos de solo lectura del perfil biométrico
-    const bmi = config?.bmi ? Number(config.bmi).toFixed(1) : null
-    const bmiCat = config?.bmi_category ?? null
-    const badge = bmiBadge(bmiCat)
+    // ── Estado editable para datos biométricos ──────────────────────────
+    const [weightKg, setWeightKg] = useState(String(config?.weight_kg ?? ''))
+    const [heightCm, setHeightCm] = useState(String(config?.height_cm ?? ''))
+    const [age, setAge] = useState(String(config?.age ?? ''))
+    const [sex, setSex] = useState(config?.sex ?? '')
+    const [activityLevel, setActivityLevel] = useState(config?.activity_level ?? 'moderate')
+
+    // ── BMI calculado en tiempo real ────────────────────────────────────
+    const w = parseFloat(weightKg)
+    const h = parseFloat(heightCm)
+    const liveBmi = (w > 0 && h > 0) ? (w / ((h / 100) ** 2)).toFixed(1) : null
+    const liveBmiCat = liveBmi
+        ? liveBmi < 18.5 ? 'Bajo peso'
+            : liveBmi < 25 ? 'Normal'
+                : liveBmi < 30 ? 'Sobrepeso'
+                    : liveBmi < 35 ? 'Obesidad I'
+                        : liveBmi < 40 ? 'Obesidad II'
+                            : 'Obesidad III'
+        : null
+    const badge = bmiBadge(liveBmiCat)
     const initial = (config?.name ?? 'U')[0].toUpperCase()
 
     const handleSave = async () => {
         setSaving(true)
         try {
+            const bmiVal = (w > 0 && h > 0) ? parseFloat((w / ((h / 100) ** 2)).toFixed(2)) : null
             const payload = {
                 name: name.trim() || 'Usuario',
                 calorie_goal: parseInt(calGoal) || 2000,
                 water_goal: parseInt(waterGoal) || 8,
                 water_reminder_hours: parseInt(waterInt) || 2,
                 notifications_enabled: notifOn,
+                weight_kg: w > 0 ? w : null,
+                height_cm: h > 0 ? h : null,
+                age: parseInt(age) > 0 ? parseInt(age) : null,
+                sex: sex || null,
+                activity_level: activityLevel || 'moderate',
+                bmi: bmiVal,
             }
             await updateConfig(configId, payload)
             onConfigUpdate(payload)
@@ -86,6 +110,14 @@ export default function Settings({ config, configId, onConfigUpdate, showToast }
         }
     }
 
+    // ── Estilo compartido para inputs biométricos ────────────────────────
+    const bioInputStyle = (color) => ({
+        background: '#1C1D27',
+        border: '1px solid #2A2B38',
+        color: color,
+    })
+    const bioInputClass = 'w-20 rounded-lg px-2 py-1.5 text-right text-sm font-bold focus:outline-none num'
+
     return (
         <div className="animate-fade-up space-y-4">
 
@@ -98,11 +130,11 @@ export default function Settings({ config, configId, onConfigUpdate, showToast }
                         {initial}
                     </div>
                     <div className="flex-1 min-w-0">
-                        <p className="text-lg font-black text-white leading-tight truncate">{config?.name ?? 'Usuario'}</p>
-                        {bmiCat && (
+                        <p className="text-lg font-black text-white leading-tight truncate">{name || 'Usuario'}</p>
+                        {liveBmiCat && (
                             <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold"
                                 style={{ color: badge.color, background: badge.bg }}>
-                                {bmiCat}
+                                {liveBmiCat}
                             </span>
                         )}
                     </div>
@@ -113,28 +145,95 @@ export default function Settings({ config, configId, onConfigUpdate, showToast }
                     onChange={e => setName(e.target.value)} placeholder="Tu nombre" />
             </Card>
 
-            {/* ── DATOS BIOMÉTRICOS ─────────────────────────────────── */}
+            {/* ── DATOS BIOMÉTRICOS (EDITABLES) ─────────────────────── */}
             <Card>
                 <SectionTitle>Composición corporal</SectionTitle>
 
-                {/* IMC grande */}
-                {bmi && (
+                {/* IMC calculado en vivo */}
+                {liveBmi && (
                     <div className="flex items-center gap-4 p-3 rounded-xl mb-3"
                         style={{ background: badge.bg, border: `1px solid ${badge.color}30` }}>
-                        <div className="text-4xl font-black num" style={{ color: badge.color }}>{bmi}</div>
+                        <div className="text-4xl font-black num" style={{ color: badge.color }}>{liveBmi}</div>
                         <div>
                             <p className="text-[10px] font-black text-[#8E8EA0] uppercase tracking-widest">IMC</p>
-                            <p className="text-sm font-bold text-white">{bmiCat}</p>
+                            <p className="text-sm font-bold text-white">{liveBmiCat}</p>
                             <p className="text-[10px] text-[#8E8EA0]">Índice de Masa Corporal</p>
                         </div>
                     </div>
                 )}
 
-                <ProfileRow label="Peso" value={config?.weight_kg} unit=" kg" accent="#5AC8FA" />
-                <ProfileRow label="Talla" value={config?.height_cm} unit=" cm" accent="#5AC8FA" />
-                <ProfileRow label="Edad" value={config?.age} unit=" años" accent="#FF9F0A" />
-                <ProfileRow label="Sexo" value={SEX_LABELS[config?.sex] ?? config?.sex} accent="#BF5AF2" />
-                <ProfileRow label="Actividad" value={ACTIVITY_LABELS[config?.activity_level] ?? config?.activity_level} accent="#30D158" />
+                {/* Peso */}
+                <div className="flex items-center justify-between py-2.5 border-b border-[#1E1E28]">
+                    <span className="text-[11px] text-[#8E8EA0] font-semibold">Peso</span>
+                    <div className="flex items-center gap-1">
+                        <input type="number" inputMode="decimal" value={weightKg}
+                            onChange={e => setWeightKg(e.target.value)}
+                            placeholder="—" min="20" max="300" step="0.1"
+                            className={bioInputClass} style={bioInputStyle('#5AC8FA')}
+                            onFocus={e => e.target.style.borderColor = '#5AC8FA'}
+                            onBlur={e => e.target.style.borderColor = '#2A2B38'} />
+                        <span className="text-[10px] text-[#8E8EA0]">kg</span>
+                    </div>
+                </div>
+
+                {/* Talla */}
+                <div className="flex items-center justify-between py-2.5 border-b border-[#1E1E28]">
+                    <span className="text-[11px] text-[#8E8EA0] font-semibold">Talla</span>
+                    <div className="flex items-center gap-1">
+                        <input type="number" inputMode="decimal" value={heightCm}
+                            onChange={e => setHeightCm(e.target.value)}
+                            placeholder="—" min="50" max="250" step="1"
+                            className={bioInputClass} style={bioInputStyle('#5AC8FA')}
+                            onFocus={e => e.target.style.borderColor = '#5AC8FA'}
+                            onBlur={e => e.target.style.borderColor = '#2A2B38'} />
+                        <span className="text-[10px] text-[#8E8EA0]">cm</span>
+                    </div>
+                </div>
+
+                {/* Edad */}
+                <div className="flex items-center justify-between py-2.5 border-b border-[#1E1E28]">
+                    <span className="text-[11px] text-[#8E8EA0] font-semibold">Edad</span>
+                    <div className="flex items-center gap-1">
+                        <input type="number" inputMode="numeric" value={age}
+                            onChange={e => setAge(e.target.value)}
+                            placeholder="—" min="10" max="120"
+                            className={bioInputClass} style={bioInputStyle('#FF9F0A')}
+                            onFocus={e => e.target.style.borderColor = '#FF9F0A'}
+                            onBlur={e => e.target.style.borderColor = '#2A2B38'} />
+                        <span className="text-[10px] text-[#8E8EA0]">años</span>
+                    </div>
+                </div>
+
+                {/* Sexo */}
+                <div className="flex items-center justify-between py-2.5 border-b border-[#1E1E28]">
+                    <span className="text-[11px] text-[#8E8EA0] font-semibold">Sexo</span>
+                    <select value={sex} onChange={e => setSex(e.target.value)}
+                        className="bg-[#1C1D27] border border-[#2A2B38] rounded-lg px-2 py-1.5 text-sm font-bold text-[#BF5AF2] focus:outline-none appearance-none cursor-pointer"
+                        style={{ minWidth: 120 }}
+                        onFocus={e => e.target.style.borderColor = '#BF5AF2'}
+                        onBlur={e => e.target.style.borderColor = '#2A2B38'}>
+                        <option value="">— Seleccionar</option>
+                        <option value="M">Masculino</option>
+                        <option value="F">Femenino</option>
+                        <option value="otro">Otro</option>
+                    </select>
+                </div>
+
+                {/* Actividad */}
+                <div className="flex items-center justify-between py-2.5">
+                    <span className="text-[11px] text-[#8E8EA0] font-semibold">Actividad</span>
+                    <select value={activityLevel} onChange={e => setActivityLevel(e.target.value)}
+                        className="bg-[#1C1D27] border border-[#2A2B38] rounded-lg px-2 py-1.5 text-sm font-bold text-[#30D158] focus:outline-none appearance-none cursor-pointer"
+                        style={{ minWidth: 160 }}
+                        onFocus={e => e.target.style.borderColor = '#30D158'}
+                        onBlur={e => e.target.style.borderColor = '#2A2B38'}>
+                        <option value="sedentary">Sedentario</option>
+                        <option value="light">Ligero (1-3 días/sem)</option>
+                        <option value="moderate">Moderado (3-5 días/sem)</option>
+                        <option value="active">Activo (6-7 días/sem)</option>
+                        <option value="very_active">Muy activo (2x/día)</option>
+                    </select>
+                </div>
             </Card>
 
             {/* ── METAS CALCULADAS (solo lectura) ──────────────────── */}
@@ -231,9 +330,63 @@ export default function Settings({ config, configId, onConfigUpdate, showToast }
             </Card>
 
             {/* ── GUARDAR ──────────────────────────────────────────── */}
-            <PrimaryButton onClick={handleSave} loading={saving}>
+            <PrimaryButton onClick={() => setShowConfirm(true)} loading={saving}>
                 Guardar Ajustes
             </PrimaryButton>
+
+            {/* ── MODAL DE CONFIRMACIÓN ──────────────────────────────── */}
+            {showConfirm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
+                    style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
+                    <div className="w-full max-w-sm rounded-2xl p-5 animate-fade-up"
+                        style={{ background: '#1C1D27', border: '1px solid #2A2B38' }}>
+                        <h3 className="text-base font-black text-white mb-3">¿Confirmar cambios?</h3>
+                        <p className="text-xs text-[#8E8EA0] mb-4">Se actualizarán los siguientes datos:</p>
+
+                        <div className="space-y-1.5 mb-5 p-3 rounded-xl bg-white/3 border border-white/6">
+                            {name !== (config?.name ?? 'Usuario') && (
+                                <p className="text-xs text-white">📝 Nombre: <span className="font-bold text-[#FF9F0A]">{name}</span></p>
+                            )}
+                            {weightKg && String(weightKg) !== String(config?.weight_kg ?? '') && (
+                                <p className="text-xs text-white">⚖️ Peso: <span className="font-bold text-[#5AC8FA]">{weightKg} kg</span></p>
+                            )}
+                            {heightCm && String(heightCm) !== String(config?.height_cm ?? '') && (
+                                <p className="text-xs text-white">📏 Talla: <span className="font-bold text-[#5AC8FA]">{heightCm} cm</span></p>
+                            )}
+                            {age && String(age) !== String(config?.age ?? '') && (
+                                <p className="text-xs text-white">🎂 Edad: <span className="font-bold text-[#FF9F0A]">{age} años</span></p>
+                            )}
+                            {sex !== (config?.sex ?? '') && (
+                                <p className="text-xs text-white">👤 Sexo: <span className="font-bold text-[#BF5AF2]">{sex === 'M' ? 'Masculino' : sex === 'F' ? 'Femenino' : 'Otro'}</span></p>
+                            )}
+                            {activityLevel !== (config?.activity_level ?? 'moderate') && (
+                                <p className="text-xs text-white">🏃 Actividad: <span className="font-bold text-[#30D158]">{ACTIVITY_LABELS[activityLevel]}</span></p>
+                            )}
+                            {String(calGoal) !== String(config?.calorie_goal ?? 2000) && (
+                                <p className="text-xs text-white">🔥 Meta calorías: <span className="font-bold text-[#FF375F]">{calGoal} kcal</span></p>
+                            )}
+                            {String(waterGoal) !== String(config?.water_goal ?? 8) && (
+                                <p className="text-xs text-white">💧 Meta agua: <span className="font-bold text-[#5AC8FA]">{waterGoal} vasos</span></p>
+                            )}
+                            {liveBmi && (
+                                <p className="text-xs text-white">📊 IMC: <span className="font-bold" style={{ color: badge.color }}>{liveBmi} ({liveBmiCat})</span></p>
+                            )}
+                        </div>
+
+                        <div className="flex gap-2">
+                            <button onClick={() => setShowConfirm(false)}
+                                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-[#8E8EA0] bg-white/5 border border-white/10 active:scale-95 transition-all">
+                                Cancelar
+                            </button>
+                            <button onClick={() => { setShowConfirm(false); handleSave() }}
+                                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white active:scale-95 transition-all"
+                                style={{ background: 'linear-gradient(135deg,#FF375F,#FF6B1A)', boxShadow: '0 0 16px rgba(255,55,95,0.35)' }}>
+                                ✓ Confirmar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ── ACERCA DE ─────────────────────────────────────────── */}
             <Card>
